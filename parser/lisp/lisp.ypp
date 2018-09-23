@@ -1,0 +1,187 @@
+%{
+// --------------------------------------------------------------------------------
+// MIT License
+//
+// Copyright (c) 2018 Jens Kallup
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --------------------------------------------------------------------------------
+#include <stdio.h>
+#include <strings.h>
+#include <stdlib.h>
+
+#undef  yyparse
+#undef  yylex
+
+#undef  yychar
+#undef  yynerrs
+#undef  yylval
+#undef  yyerror
+#undef  yyset_in
+
+#define yychar    lispchar
+#define yynerrs   lispnerrs
+#define yylval    lisplval
+#define yyerror   lisperror
+#define yyrestart lisprestart
+#define yyset_in  lispset_in
+
+#define yylex     lisplex
+#define yyparse   lispparse
+
+extern void lispset_in (FILE *);
+extern void lisprestart(FILE *);
+
+extern int  lisplex();
+extern int  lisperror(const char*);
+
+extern char* lisptext;
+
+# include <QString>
+# include <QMessageBox>
+# include <QString>
+# include <QTreeWidget>
+# include <QTreeWidgetItem>
+
+# include "source/includes/dbase/mainwindow.h"
+# include "source/includes/dbase/mainclass.h"
+
+FILE  * lisp_input;
+
+QString lisp_target_path;
+QString lisp_target;
+QString lisp_template;
+
+QStringList lisp_object_list;
+QStringList lisp_source_list;
+
+QString lisp_text;
+
+extern int line_no;
+extern MainWindow * ptr_win;
+
+static int lispErrors = 0;
+
+int lisperror(const char *p) {
+    QMessageBox::warning(
+    0,"Project File Error !!!",
+    QString("Error at line: %1: %2. ")
+    .arg(line_no+1)
+    .arg(p));
+    lispErrors = 1;
+    return line_no;
+}
+
+%}
+
+//-- SYMBOL SEMANTIC VALUES -----------------------------
+%union {
+  int val; 
+  char sym;
+};
+
+%token _NUMBER_
+
+%start lisp_pros
+
+//-- GRAMMAR RULES ---------------------------------------
+%%
+
+lisp_pros:
+      lisp_project
+    | lisp_pros lisp_pros
+    ;
+
+lisp_project:
+    { /* empty */ }
+    | lisp_number
+    ;
+
+lisp_number
+    : '(' ')'
+    | '(' lisp_number2 ')'
+    | '(' lisp_number2 lisp_number2 ')'
+    ;
+
+lisp_number2
+    : _NUMBER_
+    | lisp_number
+    ;
+
+%%
+//-- FUNCTION DEFINITIONS ---------------------------------
+int lispmain(MainWindow *w, QString file)
+{
+    line_no = 1;
+    lispErrors = 0;
+    
+    if (file.length() < 1) {
+        QMessageBox::information(0,
+            "Warning",
+            "parser file can't be open");
+        return 0;
+    }
+
+    QFile input_file(file);
+    if  (!input_file.open(QIODevice::WriteOnly | QIODevice::Text))
+    qDebug() << QString("LISP data file could not save.");
+
+    QTextStream input_out(&input_file);
+    input_out << mc->win->ui->lispEditorWidget->toPlainText();
+    input_file.close();
+
+    QFile in_file(file);
+    if (!in_file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QMessageBox::warning(0,"Project File Error !!!",
+        QString("File: '%1' could not be open.").arg(file));
+        return 0;
+    }
+    
+    QFileInfo f(in_file);
+    QString file_path = f.absolutePath();
+    in_file.close();
+    
+    if (lisp_input == nullptr) {
+        lisp_input = fopen(file.toLatin1().data(), "r");
+    }
+    else {
+        fclose(lisp_input);
+        lisp_input = nullptr;
+    }
+    
+    QString makestr = file_path;
+    lisp_target_path = file_path;
+    
+    if (lisp_input == nullptr)
+        lisp_input = fopen(file.toLatin1().data(),"r");
+    
+    lispset_in (lisp_input);
+    lisprestart(lisp_input);
+    
+    ptr_win = w;
+    int res = lispparse();  fclose(lisp_input);
+
+    if (!lispErrors) {
+        QMessageBox::information(mc->win,
+        "Transform OK",
+        "Transform SUCCESS !!!");
+    }
+    lisp_input = nullptr;
+    return res;
+}

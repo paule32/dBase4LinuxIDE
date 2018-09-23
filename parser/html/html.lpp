@@ -1,0 +1,120 @@
+%{
+// --------------------------------------------------------------------------------
+// MIT License
+//
+// Copyright (c) 2018 Jens Kallup
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --------------------------------------------------------------------------------
+#include <stdio.h>
+#include <stdlib.h>
+#include <strings.h>
+#include <ctype.h>
+#include <limits.h>
+#include <sys/types.h>
+
+#include <QMessageBox>
+#include <QDebug>
+
+#define YYDEBUG 1
+
+#include "source/parser/html/html.tab.hh"
+
+extern int line_no;
+extern char *htmltext;
+
+extern int yyerror(const char*);
+extern int htmllex();
+
+extern void help_append_char(char);
+
+QString tmp_str;
+%}
+
+%option prefix="html"
+%option noyywrap
+%option caseless
+
+hex		    [0-9a-f]
+nonascii	[\?\ö\ü\ä\Ö\Ü\Ä\ß\240-\377]
+unicode		\\{hex}{1,6}(\r\n|[ \t\r\n\f])?
+escape		{unicode}|\\[^\r\n\f0-9a-f]
+nmstart		[_a-z]|{nonascii}|{escape}
+nmchar		[_a-z0-9-]|{nonascii}|{escape}
+string1		\"([^\n\r\f\\"]|\\{nl}|{escape})*\"
+string2		\'([^\n\r\f\\']|\\{nl}|{escape})*\'
+string		{string1}|{string2}
+comment		\/\*[^*]*\*+([^/*][^*]*\*+)*\/
+ident		-?{nmstart}{nmchar}*
+name		{nmchar}+
+num	     	[-+]?[0-9]+|[-+]?[0-9]*"."[0-9]+
+space       [ \t\r\n\f]*
+ws          {space}?
+nl          \n|\r\n|\r|\f
+
+bold_text   (\b|\B)
+
+%x BACLASS
+%x BCCLASS
+%x BDCLASS
+%%
+
+{ws}\<html{ws}\>{ws}    { QMessageBox::information(0,"sdddssd",htmltext); return HTML_BEG;  }
+{ws}\<head{ws}\>{ws}    { QMessageBox::information(0,"121",htmltext); return HEAD_BEG;  }
+{ws}\<title{ws}\>{ws}   { QMessageBox::information(0,"AAAAAd",htmltext);return TITLE_BEG; }
+{ws}\<body{ws}\>{ws}    { QMessageBox::information(0,"BBBB",htmltext);return BODY_BEG;  }
+
+{ws}\<{ws}{bold_text}{ws} {
+    QMessageBox::information(0,"AAAAA","= = = = = = = =");
+    BEGIN(BACLASS);
+}
+<BACLASS>{ws}class{ws}={ws}     {
+    QMessageBox::information(0,"sssss","kkölkölkölkökököl");
+    BEGIN(BCCLASS);
+    BEGIN(INITIAL);
+}
+<BACLASS>{ws}\>{ws}{ident}\<{ws}\/{ws}{bold_text}{ws}\>{ws} {
+    QMessageBox::information(0,"sssss","lllLLLLLLLLLLL");
+    BEGIN(INITIAL);
+}
+<BCCLASS>{ws}{string} {
+    QMessageBox::information(0,"ss----sss",htmltext);     
+    QMessageBox::information(0,"sssss","EEEEEEEEEEEEEEEEEEEE");
+    BEGIN(BDCLASS);
+}
+<BDCLASS>{ws}\>{ws}{ident}\<{ws}\/{ws}{bold_text}{ws}\>{ws} {
+    QMessageBox::information(0,"sssss","ooooooooooooooo");
+}
+
+{ws}\<{ws}\/{ws}title\>{ws}  { return TITLE_END; }
+{ws}\<{ws}\/{ws}head\>{ws}   { return HEAD_END;  }
+{ws}\<{ws}\/{ws}body\>{ws}   { return BODY_END;  }
+{ws}\<{ws}\/{ws}html\>{ws}   { return HTML_END;  }
+
+{ident} {
+    char *txt = (char*) malloc(strlen(htmltext)+1);
+    strcpy(txt,htmltext);
+    QMessageBox::information(0,"sdddssd",htmltext);
+    return IDENT;
+}
+
+.   ;
+
+<<EOF>>             { return 0; }
+%%

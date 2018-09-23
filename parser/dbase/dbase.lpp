@@ -1,0 +1,170 @@
+%{
+// --------------------------------------------------------------------------------
+// MIT License
+//
+// Copyright (c) 2018 Jens Kallup
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --------------------------------------------------------------------------------
+#include <stdio.h>
+#include <stdlib.h>
+#include <strings.h>
+#include <ctype.h>
+#include <limits.h>
+#include <sys/types.h>
+
+#include <QString>
+#include <QVariant>
+#include <QMessageBox>
+#include <QProgressBar>
+#include <QDebug>
+
+#define YYDEBUG 1
+
+#include "source/parser/dbase/dbase.tab.hh"
+#include "source/parser/common.h"
+
+extern int dbaseyyerror(const char*);
+extern int dbaselex();
+
+static void getProgressFilePos(void)
+{
+    MainWindow *w =
+    dbaseThread->thread_window; w->ui->progressBar->setValue(ftell(
+    dbaseThread->thread_input)) ;
+}
+
+%}
+
+%option prefix="dbase"
+%option noyywrap
+%option caseless
+
+DIGIT       [0-9\.]
+NUM         [-+]?{DIGIT}+
+WS          [ \t\n\r]*
+REMS1       ((\/\/.*)|(\&\&.*)|(\/\/.*\n*)|(\&\&.*\n*))*
+REMS2       ((\/\*\*\/)|(\/\*(\n*|.*)\*\/))*
+REMSER      {WS}{REMS1}|{REMS2}{WS}
+IDENT       [a-zA-Z]+[a-zA-Z0-9_\\.]*
+STRING      \"(\\.|[^"\\])*\"
+STRING_LIT  {STRING}+
+
+%x DBASE_COMMENTS
+%x DBASE_PASCAL_COMMENTS
+%x DBASE_DELPHI_COMMENTS
+
+%%
+
+\/\/.*            { BEGIN(INITIAL); }
+\/\/.*\n          { ++dbaseThread->thread_lineno; BEGIN(INITIAL); }
+
+\*\*.*             { BEGIN(INITIAL);}
+\*\*.*\n           { ++dbaseThread->thread_lineno; BEGIN(INITIAL); }
+
+\&\&.*             { BEGIN(INITIAL);}
+\&\&.*\n           { ++dbaseThread->thread_lineno; BEGIN(INITIAL); }
+
+\/\*                    { BEGIN(DBASE_COMMENTS); }
+<DBASE_COMMENTS>\*\/    { BEGIN(INITIAL); }
+<DBASE_COMMENTS>\n      { ++dbaseThread->thread_lineno; }
+<DBASE_COMMENTS>.       { }
+
+\(\*			            { BEGIN(DBASE_PASCAL_COMMENTS); }
+<DBASE_PASCAL_COMMENTS>\*\)	{ BEGIN(INITIAL); }
+<DBASE_PASCAL_COMMENTS>\n	{ ++dbaseThread->thread_lineno; }
+<DBASE_PASCAL_COMMENTS>.	{ }
+
+\{                          { BEGIN(DBASE_DELPHI_COMMENTS); }
+<DBASE_DELPHI_COMMENTS>\}	{ BEGIN(INITIAL); }
+<DBASE_DELPHI_COMMENTS>\n	{ ++dbaseThread->thread_lineno; }
+<DBASE_DELPHI_COMMENTS>.	{  }
+
+class           { qDebug() << "class";     return _CLASS_; }
+endclass        { qDebug() << "endclass";  return _ENDCLASS_; }
+of              { qDebug() << "of";        return _OF_; }
+parameter       { qDebug() << "parameter"; return _PARAMETER_; }
+\?              { return _PRINT_; }
+
+{IDENT} {
+    dbaseThread->thread_text = new char[strlen(dbasetext)]; strcpy(
+    dbaseThread->thread_text , dbasetext);
+    
+    ForthStackMachine x;
+    x.content = QString(dbasetext);
+    x.content_type = 1;
+    dbaseThread->thread_forthstack.push_back(x);
+    
+    qDebug() << QString("eins id: %1").arg(dbasetext);
+    return _NAME_;
+}
+
+{STRING}   {
+    dbaseThread->thread_text = new char[strlen(dbasetext)]; strcpy(
+    dbaseThread->thread_text , dbasetext);
+
+    ForthStackMachine x;
+    x.content = QString(dbasetext);
+    x.content_type = 3;
+    dbaseThread->thread_forthstack.push_back(x);
+    
+    return _STRING_;
+}
+{NUM}      {
+    dbaseThread->thread_text = new char[strlen(dbasetext)]; strcpy(
+    dbaseThread->thread_text , dbasetext);
+
+    ForthStackMachine x;
+    x.content = QString(dbasetext);
+    x.content_type = 2;
+    dbaseThread->thread_forthstack.push_back(x);
+    
+    return _NUMBER_;
+}
+
+"=="    {
+    ForthStackMachine x;
+    x.content = QString("==");
+    x.content_type = 4;
+    dbaseThread->thread_forthstack.push_back(x);
+
+    return _EQUAL_ ;
+}
+"+="    { return _PEQUAL_; }
+"="     { return _ASSIGN_; }
+
+\'.*    { BEGIN(INITIAL); }
+\'.*\n  {
+    dbaseThread->thread_lineno =
+    dbaseThread->thread_lineno + 1;
+    
+    BEGIN(INITIAL);
+}
+
+[-*/:;,^@{}\(\)]    { return *dbasetext; }
+
+
+[ \t]*              { }
+[\n]*               {
+    dbaseThread->thread_lineno =
+    dbaseThread->thread_lineno + 1;
+}
+.                   { }
+<<EOF>>             { return 0; }
+%%

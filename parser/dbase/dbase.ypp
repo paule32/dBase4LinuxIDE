@@ -1,0 +1,527 @@
+%{
+// --------------------------------------------------------------------------------
+// MIT License
+//
+// Copyright (c) 2018 Jens Kallup
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --------------------------------------------------------------------------------
+#include <pthread.h>
+
+#include <stdio.h>
+#include <strings.h>
+#include <stdlib.h>
+
+#include <QString>
+#include <QStringList>
+#include <QMessageBox>
+
+#include "source/includes/dbase/mainwindow.h"
+#include "source/includes/console/console.h"
+#include "source/includes/dbase/procmakefile.h"
+
+#include "source/parser/common.h"
+
+dBaseThreadInfo * dbaseThread = nullptr;
+QThread          workerThread ;
+
+QMap<QString,QString> gScopeFunCode;
+
+#undef  yyparse
+#undef  yylex
+
+#undef  yychar
+#undef  yynerrs
+#undef  yylval
+#undef  yyerror
+#undef  yyset_in
+#undef  yytext
+
+#define yychar    dbasechar
+#define yynerrs   dbasenerrs
+#define yylval    dbaselval
+#define yyerror   dbaseerror
+#define yyrestart dbaserestart
+#define yyset_in  dbaseset_in
+#define yytext    dbasetext;
+
+#define yylex     dbaselex
+#define yyparse   dbaseparse
+
+extern void dbaseset_in (FILE *);
+extern void dbaserestart(FILE *);
+
+extern int  dbaselex();
+extern int  dbaseparse();
+extern int  dbaseerror(const char*);
+
+# include <QString>
+# include <QMessageBox>
+# include <QString>
+# include <QFile>
+# include <QTextStream>
+
+QString actual_class;
+
+QString main_class_name;
+int     main_class_name_counter = 0;
+
+void dBaseDoWork(const QString &pa)
+{
+    QString filename;
+    QString result;
+
+    QString input_str ;
+    QString output_str;
+    QString header_str;
+    QString mkfile_str;
+    QString object_str;
+    QString exec_str;
+    QString makexecstr;
+    QString file_path;
+
+    dbaseThread->thread_lineno = 1;
+    dbaseThread->thread_code.clear();
+
+    try {
+        if (dbaseThread->thread_file.length() < 1)
+        throw QString("no parser file given - string empty");
+
+        if (!dbaseThread->thread_file.endsWith(".prg"))
+             dbaseThread->thread_file.append(".prg"); filename =
+             dbaseThread->thread_file;
+
+        QFileInfo f(dbaseThread->thread_file);
+        file_path  = f.absolutePath();
+        input_str  = file_path;
+        output_str = file_path;
+        header_str = file_path;
+        mkfile_str = file_path;
+        makexecstr = file_path;
+
+        input_str .append(QString("/%1").arg(f.fileName()));
+        output_str.append(QString("/%1").arg(f.fileName()));
+        header_str.append(QString("/%1").arg(f.fileName()));
+
+        object_str = output_str;
+        object_str.chop(3);
+        object_str.append("o");
+
+        mkfile_str.append(QString("/%1").arg("Makefile"));
+
+        QFile input_file(input_str);
+        if  (!input_file.open(QIODevice::WriteOnly | QIODevice::Text))
+        throw QString("BASIC data file could not save.");
+
+        QTextStream input_out(&input_file);
+        input_out << dbaseThread->thread_window->ui->EditorWidget->toPlainText();
+        input_file.close();
+
+        // todo
+        output_str.chop(3); output_str.append("cc");
+        header_str.chop(3); header_str.append("h" );
+
+        dbaseThread->thread_code.append(QString(
+        "// automatically generated !!!\n"
+        "// ALL CHANGES MAY BE LOST !!!\n"
+        "// dBase4Linux (c) 2018 Jens Kallup - non-profit Software\n"
+        "// All rights reserved.\n"
+        "# include <iostream>\n"
+        "# include <vector>\n\n"
+        "# include \"common.h\"\n\n"
+        "# include \"%1\"\n\n"
+        ""
+        "using namespace dBase;"
+        "std::vector<formParameter> form_parameter;\n\n")
+        .arg(header_str));
+
+        // todo
+        dbaseThread->thread_code.append(
+        "int main(int argc, char **argv)\n"
+        "{\n\tQApplication app(argc,argv);\n"
+        "@@main_notchanged");
+
+        dbaseThread->thread_header.append(
+        "// automatically generated !!!\n"
+        "// ALL CHANGES MAY BE LOST !!!\n"
+        "// dBase4Linux (c) 2018 Jens Kallup - non-profit Software\n"
+        "@@includes\n");
+        //
+        dbaseThread->thread_input = fopen(input_str.toLatin1().data(),"r");
+
+        fseek(dbaseThread->thread_input,0,SEEK_END); int file_length =
+        ftell(dbaseThread->thread_input );
+        fseek(dbaseThread->thread_input,0,SEEK_SET);
+
+        dbaseset_in (dbaseThread->thread_input);
+        dbaserestart(dbaseThread->thread_input);
+
+        dbaseThread->thread_window->ui->progressBar->setMaximum(file_length);
+        dbaseThread->thread_window->ui->progressBar->setValue(0);
+
+        {
+            dbaseparse();
+
+            dbaseThread->thread_code.append(
+            "\treturn app.exec();\n"
+            "}\n");
+
+            // todo !!!
+            dbaseThread->thread_code.replace(
+            "@@main_notchanged",QString(
+            "\t%1 mwin;\n"
+            "\tmwin.show();\n").arg(main_class_name));
+
+            QFile Makefile(mkfile_str);
+            if  (!Makefile.open(QIODevice::WriteOnly | QIODevice::Text))
+            throw QString("Makefile data could not saved.");
+
+            exec_str = object_str;
+            exec_str.chop(2);
+
+            QTextStream make_out(&Makefile);
+            make_out
+            << "# Makefile for C++ make\n"
+            << "# dBase4Linux (c) 2018 Jens Kallup - non-profit Software\n"
+            << "CC  = gcc\n"
+            << "CXX = g++\n"
+            << "RM  = rm -f\n"
+            << "\n";
+
+            make_out
+            << "CXXFLAGS = -ggdb -O2 -fPIC -Wall -W -std=c++14 $(DEFINES) $(INCLUDES)\n"
+            << "CFLAGS   = -ggdb -I.\n"
+            << "\n"
+            << "CXXOBJECTS = "   << object_str << "\n"
+            << "CXXSOURCES = "   << output_str << "\n"
+            << "\n";
+
+            QString qt_defines = QString(
+            "DEFINES = \\\n"
+            "\t-D__BYTE_ORDER=__LITTLE_ENDIAN \\\n"
+            "\t-DQT_DEPRECATED \\\n"
+            "\t-DQT_DISABLE_DEPRECATED_BEFORE \\\n"
+            "\t-D_GLIBCXX_USE_CXX11_ABI=0 \\\n"
+            "\t-D_REENTRANT \\\n"
+            "\t-DBUILDTIME=\"19:55:39\" -DBUILDDATE=\"2018-09-12\" \\\n"
+            "\t-DQT_NO_DEBUG -DQT_HELP_LIB -DQT_WIDGETS_LIB -DQT_GUI_LIB \\\n"
+            "\t-DQT_SQL_LIB -DQT_NETWORK_LIB -DQT_SCRIPT_LIB -DQT_CORE_LIB \n\n"
+            );
+            make_out << qt_defines;
+
+            // todo
+            QString qt_header = QString(
+            "INCLUDES = \\\n"
+            "\t-I. \\\n"
+            "\t-I%1 \\\n"
+            "\t-I%1/QtHelp \\\n"
+            "\t-I%1/QtWidgets \\\n"
+            "\t-I%1/QtGui \\\n"
+            "\t-I%1/QtSql \\\n"
+            "\t-I%1/QtNetwork \\\n"
+            "\t-I%1/QtScript \\\n"
+            "\t-I%1/QtCore \\\n"
+            "\t-I%1/Qt5.10.0/5.10.0/gcc_64/mkspecs/linux-g++-64\n\n")
+            .arg("/home/jens/Qt5.10.0/5.10.0/gcc_64/include");
+            make_out << qt_header;
+
+            QString qt_libs = QString(
+            "LINKEXEC = \\\n"
+            "\t-Wl,-O1 -Wl,-rpath,/home/jens/Qt5.10.0/5.10.0/gcc_64/lib \\\n"
+            "\t-L/usr/X11R6/lib64 -L. -lssl -lcrypto -lquazip -lz -lm \\\n"
+            "\t-ll -L/home/jens/Qt5.10.0/5.10.0/gcc_64/lib -lQt5Help \\\n"
+            "\t-lQt5Widgets -lQt5Gui -lQt5Sql -lQt5Network -lQt5Script \\\n"
+            "\t-lQt5Core -lGL -lpthread\n\n"
+            );
+            make_out << qt_libs;
+
+            make_out
+            << "LDLIBS = $(LINKEXEC) -lstdc++\n"
+            << "\n"
+            << "all: $(CXXOBJECTS) " << exec_str << "\n"
+            << "\n"
+            << "\%.o: \%.cc\n"
+            << "\t$(CXX) $(CXXFLAGS) -c $<\n"
+            << "\n";
+
+            make_out
+            << exec_str << ": " << output_str << "\n"
+            << "\t$(CXX) $(CXXFLAGS) -ggdb -o \\\n"
+            << "\t" << exec_str   << " \\\n"
+            << "\t" << output_str << " \\\n"
+            << "\t$(LDLIBS)\n\n";
+
+            make_out
+            << "clean:\n"
+            << "\t$(RM) $(CXXOBJECTS)\n"
+            << "\t$(RM) " << exec_str << "\n"
+            << "\n";
+
+            Makefile.close();
+
+            // generate output
+            QFile output_file(output_str);
+            if  (!output_file.open(QIODevice::WriteOnly | QIODevice::Text))
+            throw QString("C++ data file could not save.");
+
+            // save c++ source
+            QTextStream output(&output_file);
+            output << dbaseThread->thread_code;
+            output_file.close();
+            // ------------------------------------------------
+            QFile header_file(header_str);
+            if  (!header_file.open(QIODevice::WriteOnly | QIODevice::Text))
+            throw QString("Header data file could not save.");
+
+            // save header source
+            QString hdrsrc =            dbaseThread->thread_header;
+            hdrsrc.replace("@@includes",dbaseThread->thread_classhdr);
+
+            QTextStream header(&header_file);
+            header << hdrsrc;
+            header_file.close();
+
+            fclose(dbaseThread->thread_input);
+            result = "SUCCESS";
+        }
+    }
+    catch (QString e) {
+        QMessageBox::warning(
+        dbaseThread->thread_window,
+        "Warning !!!",
+        e);
+        result = "FAIL";
+    }
+
+    if (!guiExceptionError) {
+        QMessageBox::StandardButton reply; reply=
+        QMessageBox::information(
+        dbaseThread->thread_window,
+        "dBase parser OK\n",
+        "Compiling dBase to C++ SUCCESS.\n"
+        "Would you create executable, now?",
+        QMessageBox::No | QMessageBox::Yes);
+
+        guiExceptionError = 0;
+
+        if (reply == QMessageBox::Yes) {
+            QString proc = "make";
+            QStringList p;
+
+            p << "-f";
+            p << makexecstr.append("/Makefile");
+
+            qDebug() << proc;
+            qDebug() << p;
+
+            auto *process = new MyMakefileProcess(
+            dbaseThread->thread_window->ui->dbaseConsoleWidget,
+            proc,p);
+
+            int pexcode =
+            process->execute(proc,p);
+            process->waitForFinished();
+
+            if ((process->exitStatus() == QProcess::CrashExit)
+            || ( process->exitCode  () != 0)
+            || ( pexcode               != 0)) {
+                QMessageBox::information(
+                dbaseThread->thread_window,
+                "Information",
+                "execute file created: FAIL.");
+                guiExceptionError = 0;
+            }
+            else {
+                QMessageBox::warning(
+                dbaseThread->thread_window,
+                "Information",
+                "execute file created: SUCCESS.");
+                guiExceptionError = 0;
+
+                // todo: strip + upx
+                proc = "strip"; pexcode =
+                process->execute(proc,QStringList() << exec_str);
+                process->waitForFinished();
+
+                proc = "upx"  ; pexcode =
+                process->execute(proc,QStringList() << exec_str);
+                process->waitForFinished();
+            }
+        }
+    }
+    else {
+        QMessageBox::information(
+        dbaseThread->thread_window,
+        "dBase parser FAIL\n",
+        "Compiling dBase to C++ FAIL.");
+        guiExceptionError = 0;
+    }
+}
+
+dBaseThreadInfo:: dBaseThreadInfo() { }
+dBaseThreadInfo::~dBaseThreadInfo() { }
+
+int dbaseerror(const char *p)
+{
+    guiExceptionError = 1;
+
+    QMessageBox::warning(
+    dbaseThread->thread_window,
+    "Warninsssssssg !!!",QString("Error at line: %1: %2. ")
+    .arg(dbaseThread->thread_lineno+1).arg(p));
+
+    return dbaseThread->thread_lineno;
+}
+
+%}
+
+//-- SYMBOL SEMANTIC VALUES -----------------------------
+%union {
+  int val; 
+  char sym;
+};
+
+%token _PRINT_ _NAME_ _ASSIGN_ _PEQUAL_ _STRING_
+%token _NUMBER_ _ASSERT_ _EQUAL_ _PARAMETER_ _CLASS_ _ENDCLASS_ _OF_
+
+%start dbase_prg
+
+//-- GRAMMAR RULES ---------------------------------------
+%%
+
+dbase_prg:
+    { /* empty */ }
+    | dbase_print
+    | parameter_forms
+    | dbase_class dbase_prg
+    | dbase_prg
+    ;
+
+dbase_print:
+    { /* empty */ }
+    | _PRINT_ _STRING_ {
+        //basic_text.chop(1);
+        dbaseThread->thread_code.append( QString("%1\n").arg(
+        
+        dbaseThread->thread_forthstack.first().content.toString()));
+        dbaseThread->thread_forthstack.pop_front();
+    }
+    ;
+
+parameter_forms:
+    { /* empty */ }
+    | _PARAMETER_ parameter_name
+    ;
+
+parameter_name:
+    _NAME_  {
+        QString idet =
+        dbaseThread->thread_forthstack.first().content.toString();
+        dbaseThread->thread_forthstack.pop_front();
+
+        gScopeFunCode["formParameter"] +=
+        QString(".emplace_back(\"%1\"").arg(idet);
+
+        dbaseThread->thread_code.append("form_parameter.emplace_back");
+        qDebug() << gScopeFunCode;
+    }
+    | parameter_name ',' parameter_name
+    ;
+
+dbase_class:
+    _CLASS_ _NAME_ _OF_ _NAME_ {
+        QString idet2 =
+        dbaseThread->thread_forthstack.first().content.toString();
+        dbaseThread->thread_forthstack.pop_front();
+        QString idet1 =
+        dbaseThread->thread_forthstack.first().content.toString();
+        dbaseThread->thread_forthstack.pop_front();
+
+        idet2 = idet2.toUpper();
+        idet1 = idet1.toUpper();
+
+        actual_class = QString("class@%1of%2")
+        .arg(idet2)
+        .arg(idet1);
+
+        QString idet3 = idet1;
+        QString idet4 = idet1;
+
+        if (idet1 == "FORM")       {  idet3 = "<QWidget>"    ;
+           idet4   = "QWidget";    }  else
+        if (idet1 == "MAINWINDOW") {  idet3 = "<QMainWindow>";
+           idet4   = "QMainWindow";}
+        else
+        idet3 = QString("\"%1.h\"").arg(idet1);
+
+        dbaseThread->thread_classhdr.append(QString(
+        "#include %1\n").arg(idet3));
+
+        dbaseThread->thread_header  .append(QString(
+        "class %1 : public %2 {\npublic:\n"
+        "\t%1(QWidget *parent = nullptr)\n"
+        "\t{\n"
+        "\t\tQ_UNUSED(parent);\n")
+        .arg(idet2)
+        .arg(idet4));
+
+        main_class_name_counter = 1;
+        main_class_name = idet2    ;
+
+    } _ENDCLASS_ {
+        dbaseThread->thread_header.append("\t}\n};\n");
+    }
+    ;
+%%
+
+//-- FUNCTION DEFINITIONS ---------------------------------
+
+int dbasemain(MainWindow *w, QString file)
+{        
+    try {
+        // init/reset ...
+        gScopeFunCode.clear();
+
+        // thread ...
+        dbaseThread = new dBaseThreadInfo;
+
+        dbaseThread->thread_num    = 1;
+        dbaseThread->thread_file   = file;
+        dbaseThread->thread_window = w;
+
+        dBaseDoWork("tp");
+
+        delete dbaseThread;
+    }
+    catch (QString e) {
+        QMessageBox::warning(w,
+        "Execption occur",e);
+        return dbaseThread->thread_lineno;
+    }
+    catch (std::string e) {
+        QMessageBox::warning(w,
+        "Execption occur",e.c_str());
+        return basicThread->thread_lineno;
+    }
+    catch (...) {
+        return basicThread->thread_lineno;
+    }
+
+    return 0;
+}

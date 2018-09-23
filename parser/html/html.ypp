@@ -1,0 +1,228 @@
+%{
+// --------------------------------------------------------------------------------
+// MIT License
+//
+// Copyright (c) 2018 Jens Kallup
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --------------------------------------------------------------------------------
+#include <stdio.h>
+#include <strings.h>
+#include <stdlib.h>
+
+#undef  yyparse
+#undef  yylex
+
+#undef  yychar
+#undef  yynerrs
+#undef  yylval
+#undef  yylineno
+#undef  yyerror
+#undef  yyset_in
+
+#define yychar    htmlchar
+#define yynerrs   htmlnerrs
+#define yylval    htmllval
+#define yylineno  htmllineno
+#define yyerror   htmlerror
+#define yyrestart htmlrestart
+#define yyset_in  htmlset_in
+
+#define yylex     htmllex
+#define yyparse   htmlparse
+
+extern void htmlset_in (FILE *);  extern void cssset_in (FILE *);
+extern void htmlrestart(FILE *);  extern void cssrestart(FILE *);
+
+extern int  htmlparse();  extern int cssparse();
+extern int  htmllex();    extern int csslex();
+
+extern int  htmlerror(const char*);
+extern int  csserror(const char*);
+
+extern char* htmltext;
+
+# include <QString>
+# include <QMessageBox>
+# include <QTextEdit>
+
+# include "source/parser/misc.h"
+
+extern int htmllineno;
+//static QTextEdit * ptr_win = nullptr;  // MainWindow::ui->helpBrowser
+
+// ----------------------------------------------------------------
+// the html subset of help browser is in strict use mpde.
+// this means, that the code is staticaly checked, and must
+// be exactly given by it's specification.
+// else, error will be display, and parser stop future readings.
+// ----------------------------------------------------------------
+int htmlerror(const char *p) {
+    QMessageBox::warning(
+    0,"HTML Error !!!",
+    QString("Error at line: %1: %2. ")
+    .arg(htmllineno)
+    .arg(p));
+    return htmllineno;
+}
+%}
+
+//-- SYMBOL SEMANTIC VALUES -----------------------------
+%token ANGLE
+%token DIMENSION
+%token EMS
+%token EXS
+%token FREQ
+%token HASH
+%token HZ
+%token IDENT
+%token KHZ
+%token LENGTH
+%token NUMBER
+%token PERCENTAGE
+%token STRING
+%token TIME
+%token URI
+
+%token _CLASS_ _STRING_
+
+%token HTML_BEG BODY_BEG HEAD_BEG TITLE_BEG
+%token HTML_END BODY_END HEAD_END TITLE_END
+
+%token BOLD_TEXT_BEG BOLD_TEXT_BEG2 BOLD_TEXT_CLASS
+%token BOLD_TEXT_END
+
+%start html_parser;
+
+//-- GRAMMAR RULES ---------------------------------------
+%%
+
+html_parser:
+      html_start
+    | html_start html_start
+    ;
+
+html_start:
+    HTML_BEG html_head html_body HTML_END
+    ;
+
+html_head:
+    HEAD_BEG html_head_tags HEAD_END
+    ;
+
+ident_token:
+    { /* empty */ }
+    | IDENT
+    | ident_token IDENT
+    ;
+    
+html_head_tags:
+    { /* emptry */ }
+    | html_title
+    | html_head_tags html_title
+    ;
+    
+html_title:
+    TITLE_BEG ident_token {
+        QMessageBox::information(0,"Texter",htmltext);
+    } TITLE_END
+    ;
+
+html_body:
+    BODY_BEG html_body_tags BODY_END
+    ;
+    
+html_body_tags:
+    { /* empty */ }
+    | ident_token
+    | body_tag
+    | html_body_tags body_tag
+    | html_body_tags ident_token
+    ;
+    
+body_tag:
+    { /* empty */ }
+    | ident_token {
+        help_append_text(htmltext);
+    }
+    ;
+    
+%%
+//-- FUNCTION DEFINITIONS ---------------------------------
+int htmlmain(QTextEdit *p, QString name)
+{
+    if (name.length() < 1) {
+        QMessageBox::information(0,
+            "Warning",
+            "parser file can't be open");
+        return 0;
+    }
+
+    FILE*html_file = fopen(name.toLatin1().data(),"r");
+    if (!html_file) {
+        QMessageBox::critical(0,"Error",
+        "HTML file for parser could not be open.");
+        return 1;
+    }
+    htmlset_in (html_file);
+    htmlrestart(html_file);
+
+    // ------------------------------
+    // first element Document init.
+    // ------------------------------
+    help_setup_settings();
+    
+    // -------------------------------------
+    // then, we clobber the .css file(s) ...
+    // -------------------------------------
+    FILE*css_file = fopen("./test.css","r");
+    if (!css_file) {
+        QMessageBox::critical(0,"Error",
+        "CSS file for parser could not be open.");
+        return 1;
+    }
+    cssset_in (css_file);
+    cssrestart(css_file);
+
+    int cssres = cssparse();
+    fclose(css_file);
+    
+    
+    //
+    int res = htmlparse();
+    fclose(html_file) ;
+    
+    // -----------------------------------------------
+    // when all is ok, try render the informations ...
+    // -----------------------------------------------
+    if (!res) {
+    #if 0
+        // sanity
+        ptr_win = new QTextEdit;
+        ptr_win = p;
+
+        QString html;
+        for (int i = 0; i < help_text.count(); ++i)
+        html.append(help_text.at(i).text);
+        ptr_win->setHtml(html);
+    #endif
+    }
+    
+    return res;
+}

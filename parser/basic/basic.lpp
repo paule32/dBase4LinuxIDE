@@ -1,0 +1,175 @@
+%{
+// --------------------------------------------------------------------------------
+// MIT License
+//
+// Copyright (c) 2018 Jens Kallup
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --------------------------------------------------------------------------------
+#include <stdio.h>
+#include <stdlib.h>
+#include <strings.h>
+#include <ctype.h>
+#include <limits.h>
+#include <sys/types.h>
+
+#include <QString>
+#include <QVariant>
+#include <QMessageBox>
+#include <QProgressBar>
+#include <QDebug>
+
+#define YYDEBUG 1
+
+#include "source/parser/common.h"
+#include "source/parser/basic/basic.tab.hh"
+
+QString basic_text;
+
+extern int basicyyerror(const char*);
+extern int basiclex();
+
+static void getProgressFilePos(void)
+{
+    MainWindow *w =
+    basicThread->thread_window; w->ui->progressBar->setValue(ftell(
+    basicThread->thread_input)) ;
+}
+
+%}
+
+%option prefix="basic"
+%option noyywrap
+%option caseless
+
+DIGIT       [0-9\.]
+NUM         [-+]?{DIGIT}+
+WS          [ \t\n\r]*
+REMS1       ((\/\/.*)|(\&\&.*)|(\/\/.*\n*)|(\&\&.*\n*))*
+REMS2       ((\/\*\*\/)|(\/\*(\n*|.*)\*\/))*
+REMSER      {WS}{REMS1}|{REMS2}{WS}
+IDENT       [a-zA-Z]+[a-zA-Z0-9_\\.]*
+STRING      \"(\\.|[^"\\])*\"
+STRING_LIT  {STRING}+
+
+%x BASIC_COMMENTS
+%x BASIC_PASCAL_COMMENTS
+%x BASIC_DELPHI_COMMENTS
+
+%%
+
+\/\/.*            { getProgressFilePos(); BEGIN(INITIAL); }
+\/\/.*\n          { getProgressFilePos(); ++basicThread->thread_lineno; BEGIN(INITIAL); }
+
+"#".*             { getProgressFilePos(); BEGIN(INITIAL);}
+"#".*\n           { getProgressFilePos(); ++basicThread->thread_lineno; BEGIN(INITIAL); }
+
+\/\*                    { getProgressFilePos(); BEGIN(BASIC_COMMENTS); }
+<BASIC_COMMENTS>\*\/    { getProgressFilePos(); BEGIN(INITIAL); }
+<BASIC_COMMENTS>\n      { getProgressFilePos(); ++basicThread->thread_lineno; }
+<BASIC_COMMENTS>.       { getProgressFilePos(); }
+
+\(\*			            { getProgressFilePos(); BEGIN(BASIC_PASCAL_COMMENTS); }
+<BASIC_PASCAL_COMMENTS>\*\)	{ getProgressFilePos(); BEGIN(INITIAL); }
+<BASIC_PASCAL_COMMENTS>\n	{ getProgressFilePos(); ++basicThread->thread_lineno; }
+<BASIC_PASCAL_COMMENTS>.	{ getProgressFilePos(); }
+
+\{                          { getProgressFilePos(); BEGIN(BASIC_DELPHI_COMMENTS); }
+<BASIC_DELPHI_COMMENTS>\}	{ getProgressFilePos(); BEGIN(INITIAL); }
+<BASIC_DELPHI_COMMENTS>\n	{ getProgressFilePos(); ++basicThread->thread_lineno; }
+<BASIC_DELPHI_COMMENTS>.	{ getProgressFilePos(); }
+
+rem.*           { getProgressFilePos(); BEGIN(INITIAL); }
+rem.*\n         { getProgressFilePos(); ++basicThread->thread_lineno; BEGIN(INITIAL); }
+
+assert          { getProgressFilePos(); return _ASSERT_; }
+print           { getProgressFilePos(); return _PRINT_; }
+
+{IDENT} { 
+    basicThread->thread_text = new char[strlen(basictext)]; strcpy(
+    basicThread->thread_text , basictext);
+    
+    ForthStackMachine x;
+    x.content = QString(basictext);
+    x.content_type = 1;
+    basicThread->thread_forthstack.push_back(x);
+    
+    getProgressFilePos();
+    return _NAME_;
+}
+
+{STRING}   {
+    basicThread->thread_text = new char[strlen(basictext)]; strcpy(
+    basicThread->thread_text , basictext);
+
+    ForthStackMachine x;
+    x.content = QString(basictext);
+    x.content_type = 3;
+    basicThread->thread_forthstack.push_back(x);
+    
+    getProgressFilePos();
+    return _STRING_;
+}
+{NUM}      {
+    basicThread->thread_text = new char[strlen(basictext)]; strcpy(
+    basicThread->thread_text , basictext);
+
+    ForthStackMachine x;
+    x.content = QString(basictext);
+    x.content_type = 2;
+    basicThread->thread_forthstack.push_back(x);
+    
+    getProgressFilePos();
+    return _NUMBER_;
+}
+
+"=="    {
+    ForthStackMachine x;
+    x.content = QString("==");
+    x.content_type = 4;
+    basicThread->thread_forthstack.push_back(x);
+
+    getProgressFilePos();
+    return _EQUAL_ ;
+}
+"+="    { getProgressFilePos(); return _PEQUAL_; }
+"="     { getProgressFilePos(); return _ASSIGN_; }
+
+\'.*    { getProgressFilePos(); BEGIN(INITIAL); }
+\'.*\n  {
+    basicThread->thread_lineno =
+    basicThread->thread_lineno + 1;
+    
+    getProgressFilePos();
+    BEGIN(INITIAL);
+}
+
+[-*/:;,^@{}\(\)]    { getProgressFilePos(); return *basictext; }
+
+
+[ \t]*              { getProgressFilePos(); }
+[\n]*               {
+    basicThread->thread_lineno =
+    basicThread->thread_lineno + 1;
+    
+    getProgressFilePos();
+}
+.                   { getProgressFilePos(); }
+<<EOF>>             { return 0; }
+%%

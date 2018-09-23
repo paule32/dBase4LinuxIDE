@@ -1,0 +1,6 @@
+<RCC>
+    <qresource prefix="/ssl">
+        <file>./ssl/info.zip</file>
+    </qresource>
+</RCC>
+

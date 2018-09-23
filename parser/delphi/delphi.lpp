@@ -1,0 +1,349 @@
+%{
+// --------------------------------------------------------------------------------
+// MIT License
+//
+// Copyright (c) 2018 Jens Kallup
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --------------------------------------------------------------------------------
+#include <stdio.h>
+#include <stdlib.h>
+#include <strings.h>
+#include <ctype.h>
+#include <limits.h>
+#include <sys/types.h>
+
+#include <QString>
+#include <QDebug>
+
+#define YYDEBUG 1
+
+#undef  yylval
+#define yylval delphilval
+
+QString delphi_yytext;
+
+#include "source/parser/delphi/delphi.tab.hh"
+
+extern int line_no;
+extern char * yytext;
+
+enum {
+    T_NUMBER = 4,
+    T_EQUAL = 5,
+};
+
+/**
+ * Forward declerations
+ **/
+void Number ();
+void HexaNumber ();
+
+extern int yyerror(const char*);
+extern int delphilex();
+%}
+
+%option prefix="delphi"
+%option noyywrap
+%option caseless
+
+DIGIT       [0-9\.]
+HEXALETTER  [a-fA-F]
+HEXANUMBER  [0][x](({DIGIT}|{HEXALETTER})+)
+NUM         {DIGIT}+
+NUMBER      {NUM}
+WS          [ \t\n\r]*
+REMS1       ((\/\/.*)|(\&\&.*)|(\/\/.*\n*)|(\&\&.*\n*))*
+REMS2       ((\/\*\*\/)|(\/\*(\n*|.*)\*\/))*
+REMSER      {WS}{REMS1}|{REMS2}{WS}
+IDENT       [a-zA-Z]+[a-zA-Z0-9_]*
+NAME        {IDENT}*
+STRING      \"(\\.|[^"\\])*\"
+STRING_LIT  {STRING}+
+
+%x COMMENTS PASCAL_COMMENTS DELPHI_COMMENTS
+%x OPADD OPSUB OPDIV OPMOD NUM
+%x CREATE_CMD CREATE_FILE CREATE_TABLE
+%x NEW_TABLE_STRUCT
+%x TABLE_STRUCT_BEG
+%x TABLE_STRUCT_END DATA_TYPE PRIMARY_KEY
+%x DATA_LENBEG
+%x DATA_LENEND PRIKEYS_BEG PRIKEYS_END
+%x FILENAME
+%%
+
+\.                { printf("dot\n");  return _DOT_; }
+\/\/.*            { BEGIN(INITIAL); }
+\/\/.*\n          { ++line_no; BEGIN(INITIAL); }
+
+\&\&.*            { BEGIN(INITIAL); }
+\*\*.*            { BEGIN(INITIAL); }
+
+\&\&.*\n          { ++line_no; BEGIN(INITIAL); }
+\*\*.*\n          { ++line_no; BEGIN(INITIAL); }
+
+\/\*              { BEGIN(COMMENTS); }
+<COMMENTS>\*\/    { BEGIN(INITIAL); }
+<COMMENTS>\n      { ++line_no; }
+<COMMENTS>.       ;
+
+\(\*			{ BEGIN(PASCAL_COMMENTS); }
+<PASCAL_COMMENTS>\*\)	{ BEGIN(INITIAL); }
+<PASCAL_COMMENTS>\n	{ ++line_no; }
+<PASCAL_COMMENTS>.	;
+
+\{			{ BEGIN(DELPHI_COMMENTS); }
+<DELPHI_COMMENTS>\}	{ BEGIN(INITIAL); }
+<DELPHI_COMMENTS>\n	{ ++line_no; }
+<DELPHI_COMMENTS>.	;
+
+
+STRING_LIT      { printf("string lit\n");	return _STRING_LITTERAL_; }
+STRING		{ printf("string\n");		return _STRING_; }
+
+program 	{ printf("programs\n");	 	return _PROGRAM_; }
+libary		{ printf("libary\n");	 	return _LIBRARY_; }
+package 	{ printf("package\n");	 	return _PACKAGE_; }
+unit		{ printf("unit\n");	 	return _UNIT_;    }
+uses		{ printf("uses\n");	 	return _USES_;    }
+implementation	{ printf("imple\n");	 	return _IMPLEMENTATION_; }
+initialization  { printf("initiali\n"); 	return _INITIALIZATION_; }
+finalization	{ printf("finalization\n");	return _FINALIZATION_; }
+begin		{ printf("begin\n");	 	return _BEGIN_; }
+end		{ printf("end\n");	 	return _END_;   }
+downto		{ printf("downto\n");		return _DOWNTO_; }
+to		{ printf("to\n");		return _TO_; }
+implements	{ printf("implements\n");	return _IMPLEMENTS_; }
+case		{ printf("case\n");		return _CASE_; }
+boolean 	{ printf("boolean\n");		return _BOOLEAN_; }
+false		{ printf("false\n");		return _FALSE_; }
+true		{ printf("true\n");		return _TRUE_; }
+byte		{ printf("byte\n");		return _BYTE_; }
+char		{ printf("char\n");		return _CHAR_; }
+shortint	{ printf("shortint\n"); 	return _SHORTINT_; }
+word		{ printf("word\n");		return _WORD_; }
+smallint	{ printf("smallint\n"); 	return _SMALLINT_; }
+longword	{ printf("longword\n"); 	return _LONGWORD_; }
+cardinal	{ printf("cardinal\n"); 	return _CARDINAL_; }
+longint 	{ printf("longint\n");		return _LONGINT_; }
+integer 	{ printf("integer\n");		return _INTEGER_; }
+single		{ printf("single\n");		return _SINGLE_; }
+currency	{ printf("currency\n"); 	return _CURRENCY_; }
+double		{ printf("double\n");		return _DOUBLE_; }
+extended	{ printf("extended\n"); 	return _EXTENDED_; }
+int64		{ printf("int64\n");		return _INT64_; }
+"string"	{ printf("string\n");		return _STRINGTYPE_; }
+not		{ printf("not\n");	 	return _NOT_;   }
+in		{ printf("in\n");	 	return _IN_;	}
+nil		{ printf("nil\n");	 	return _NIL_;	}
+or		{ printf("or\n");	 	return _OR_;	}
+xor		{ printf("xor\n");	 	return _XOR_;	}
+and		{ printf("and\n");	 	return _AND_;   }
+div		{ printf("div\n");	 	return _DIV_;   }
+mod		{ printf("mod\n");	 	return _MOD_;   }
+shl		{ printf("shl\n");	 	return _SHL_; }
+shr		{ printf("shr\n");	 	return _SHR_; }
+at		{ printf("at\n");	 	return _AT_; }
+do		{ printf("do\n");	 	return _DO_; }
+for		{ printf("for\n");	 	return _FOR_; }
+var		{ printf("var\n"); 	 	return _VAR_; }
+on		{ printf("on\n");		return _ON_; }
+is		{ printf("is\n");		return _IS_; }
+default 	{ printf("default\n");   	return _DEFAULT_; }
+nodefault	{ printf("nodefault\n"); 	return _NODEFAULT_; }
+read		{ printf("read\n");		return _READ_; }
+readonly	{ printf("readonly\n"); 	return _READONLY_; }
+write		{ printf("write\n");		return _WRITE_; }
+writeonly	{ printf("writeonly\n");	return _WRITEONLY_; }
+stored		{ printf("stored\n");		return _STORED_; }
+register	{ printf("register\n");		return _REGISTER_; }
+abstract	{ printf("abstract\n");		return _ABSTRACT_; }
+virtual 	{ printf("virtual\n");		return _VIRTUAL_; }
+threadvar	{ printf("threadvar\n");	return _THREADVAR_; }
+except		{ printf("except\n");		return _EXCEPT_; }
+index		{ printf("index\n");		return _INDEX_; }
+dispid		{ printf("dispid\n");		return _DISPID_; }
+dispinterface	{ printf("dispinterface\n");	return _DISPINTERFACE_; }
+interface	{ printf("interface\n");	return _INTERFACE_; }
+if		{ printf("if\n");		return _IF_; }
+else		{ printf("else\n");		return _ELSE_; }
+then		{ printf("then\n");		return _THEN_; }
+repeat		{ printf("repeat\n");		return _REPEAT_; }
+until		{ printf("until\n");		return _UNTIL_; }
+while		{ printf("while\n");		return _WHILE_; }
+pascal		{ printf("pascal\n");		return _PASCAL_; }
+cdecl		{ printf("cdecl\n");		return _CDECL_; }
+stdcall 	{ printf("stdcall\n");		return _STDCALL_; }
+safecall	{ printf("safecall\n"); 	return _SAFECALL_; }
+overload	{ printf("overload\n"); 	return _OVERLOAD_; }
+override	{ printf("override\n"); 	return _OVERRIDE_; }
+class		{ printf("class\n");		return _CLASS_; }
+try		{ printf("try\n");		return _TRY_; }
+finally 	{ printf("finally\n");		return _FINALLY_; }
+inherited	{ printf("inherited\n");	return _INHERITED_; }
+constructor	{ printf("constructor\n");	return _CONSTRUCTOR_; }
+destructor	{ printf("destructor\n");	return _DESTRUCTOR_; }
+public		{ printf("public\n");		return _PUBLIC_; }
+protected	{ printf("protected\n");	return _PROTECTED_; }
+private 	{ printf("private\n");		return _PRIVATE_; }
+property	{ printf("property\n"); 	return _PROPERTY_; }
+published	{ printf("published\n");	return _PUBLISHED_; }
+dynamic 	{ printf("dynamic\n");		return _DYNAMIC_; }
+absolute	{ printf("absolute\n"); 	return _ABSOLUTE_; }
+packed  	{ printf("packed\n");		return _PACKED_; }
+record		{ printf("record\n");		return _RECORD_; }
+set		{ printf("set\n");		return _SET_; }
+array		{ printf("array\n");		return _ARRAY_; }
+of		{ printf("of\n");		return _OF_; }
+reintroduce	{ printf("reintroduce\n");	return _REINTRODUCE_; }
+message 	{ printf("message\n");		return _MESSAGE_; }
+type		{ printf("type\n");		return _TYPE_; }
+procedure	{ printf("procedure\n");	return _PROCEDURE_; }
+function	{ printf("function\n"); 	return _FUNCTION_; }
+
+
+file		{ printf("file\n");	return _FILE_;  }
+
+"<="		{ printf("<=\n");	return _LESSER_THAN_;  }
+">="		{ printf(">=\n");	return _GREATER_THAN_; }
+"=>"		{ printf("=>\n");	return _GREATER_THAN_; }
+"<>"		{ printf("<>\n");	return _NOT_EQUAL_;    }
+
+".."		{ printf("..\n");	return _DBL_POINT_;  }	
+":="		{ printf(":=\n");	return _ASSIGNMENT_; }
+
+{NAME}		{ delphi_yytext = QString(yytext);
+  qDebug() << delphi_yytext;
+  return _NAME_;
+}
+
+"^(.*/)?(?:$|(.+?)(?:(\.[^.]*$)|$))?"  { return FILENAME; }
+
+<CREATE_CMD>"file"      { printf("new: file  \n"); BEGIN(CREATE_FILE); }
+<CREATE_CMD>"table"     { printf("new: table \n"); BEGIN(CREATE_TABLE);  }
+
+<CREATE_FILE><FILENAME> {
+printf("wwwmos\n");
+    char *txt = (char*) malloc(strlen(yytext)+1);
+    strcpy(txt,yytext);
+    printf("filserl1: -> %s\n",txt);
+    free(txt);
+    BEGIN(INITIAL);
+}
+<CREATE_FILE>[a-zA-Z_]+[a-zA-Z0-9_\.]* {
+printf("ccmos\n");
+    char *txt = (char*) malloc(strlen(yytext)+1);
+    strcpy(txt,yytext);
+    printf("filserl2: -> %s\n",txt);
+    free(txt);
+    BEGIN(INITIAL);
+}
+
+<CREATE_TABLE><FILENAME> {
+printf("fos\n");
+    char *txt = (char*) malloc(strlen(yytext)+1);
+    strcpy(txt,yytext);
+    printf("tabsel1: -> %s\n",txt);
+    free(txt);
+    BEGIN(NEW_TABLE_STRUCT);
+}
+<CREATE_TABLE>[a-zA-Z_]+[a-zA-Z0-9_\.]* {
+printf("mos\n");
+    char *txt = (char*) malloc(strlen(yytext)+1);
+    strcpy(txt,yytext);
+    printf("tabsel2: -> %s\n",txt);
+    free(txt);
+    BEGIN(NEW_TABLE_STRUCT);
+}
+
+<NEW_TABLE_STRUCT>"(" {
+    printf("beg\n");
+    BEGIN(TABLE_STRUCT_BEG);
+}
+
+<TABLE_STRUCT_BEG>[a-zA-Z_]+[a-zA-Z0-9_]*  {
+    char *txt = (char*) malloc(strlen(yytext)+1);
+    strcpy(txt,yytext);
+    if (strcmp(txt,"primary") == 0) {
+        printf("a key\n");
+        BEGIN(PRIMARY_KEY);
+    }
+    else {
+        printf("ident: %s\n",yytext);
+        BEGIN(DATA_TYPE);
+    }
+}
+<TABLE_STRUCT_END>")"             { printf("table struct ok.\n"); BEGIN(INITIAL); }
+
+<PRIMARY_KEY>"("   {
+    printf(" a key is given...\n");
+    BEGIN(PRIKEYS_BEG);
+}
+<PRIKEYS_BEG>[a-zA-Z_]+[a-zA-Z0-9_]* {
+    char *txt = (char*) malloc(strlen(yytext)+1);
+    strcpy(txt,yytext);
+    printf("1prikey: %s\n",txt);
+    free(txt);
+    BEGIN(PRIKEYS_END);
+}
+<PRIKEYS_BEG>[a-zA-Z_]+[a-zA-Z0-9_]*\,[ \t]* {
+    char *txt = (char*) malloc(strlen(yytext)+1);
+    strcpy(txt,yytext);
+    printf("2prikey: %s\n",txt);
+    free(txt);
+    BEGIN(PRIKEYS_BEG);
+}
+<PRIKEYS_END>")"    {
+    printf("tabselle has prikeys.\n");
+    BEGIN(INITIAL);
+}
+
+<DATA_TYPE>("b"|"bool"|"boolean") { printf(" B, \n"); BEGIN(TABLE_STRUCT_END); }
+<DATA_TYPE>("l"|"logical")        { printf(" L, \n"); BEGIN(TABLE_STRUCT_END); }
+<DATA_TYPE>("n"|"numeric")        { printf(" N, \n"); BEGIN(DATA_LENBEG); }
+<DATA_TYPE>("c"|"char")           { printf(" C, \n"); BEGIN(DATA_LENBEG); }
+<DATA_TYPE>("d"|"date")           { printf(" D, \n"); BEGIN(TABLE_STRUCT_END); }
+
+<DATA_LENBEG>"("[0-9]+")"   {
+    char *txt = (char*) malloc(strlen(yytext)+1);
+    strcpy(txt,yytext);
+    printf("1>numser: %s\n",txt);
+    free(txt);
+    BEGIN(TABLE_STRUCT_END);
+}
+<DATA_LENBEG>"("[0-9]+")"[ \t]*\,   {
+    char *txt = (char*) malloc(strlen(yytext)+1);
+    strcpy(txt,yytext);
+    printf("2>numser: %s\n",txt);
+    free(txt);
+    printf("nax\n");
+    BEGIN(TABLE_STRUCT_BEG);
+}
+
+{NUM}    { printf("num: %d\n", atoi(yytext)); return _NUMBER_; }
+{NUMBER} { printf("Num: %d\n", atoi(yytext)); return _NUMBER_; }
+
+
+[-+*/:;,^@{}=]      { printf("%c\n", *delphitext); return *delphitext; }
+
+[ \t]*              { }
+[\n]*               { ++line_no; }
+.		    ;
+<<EOF>>             { return 0; }
+%%

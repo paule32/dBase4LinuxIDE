@@ -1,0 +1,299 @@
+%{
+// --------------------------------------------------------------------------------
+// MIT License
+//
+// Copyright (c) 2018 Jens Kallup
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --------------------------------------------------------------------------------
+#include <stdio.h>
+#include <strings.h>
+#include <stdlib.h>
+
+#undef  yyparse
+#undef  yylex
+
+#undef  yychar
+#undef  yynerrs
+#undef  yylval
+#undef  yyerror
+#undef  yyset_in
+
+#define yychar    prochar
+#define yynerrs   pronerrs
+#define yylval    prolval
+#define yyerror   proerror
+#define yyrestart prorestart
+#define yyset_in  proset_in
+
+#define yylex     prolex
+#define yyparse   proparse
+
+extern void proset_in (FILE *);
+extern void prorestart(FILE *);
+
+extern int  prolex();
+extern int  proerror(const char*);
+
+extern char* protext;
+
+# include <QString>
+# include <QMessageBox>
+# include <QString>
+# include <QTreeWidget>
+# include <QTreeWidgetItem>
+
+# include "source/includes/dbase/mainwindow.h"
+# include "source/parser/pro/projectitem.h"
+
+FILE  * pro_input;
+
+QString pro_target_path;
+QString pro_target;
+QString pro_template;
+
+QStringList pro_object_list;
+QStringList pro_source_list;
+
+QString pro_text;
+
+extern int line_no;
+MainWindow * ptr_win = nullptr;
+
+int proerror(const char *p) {
+    QMessageBox::warning(
+    0,"Project File Error !!!",
+    QString("Error at line: %1: %2. ")
+    .arg(line_no+1)
+    .arg(p));
+    return line_no;
+}
+
+MyProjectItem * pro_global = nullptr;
+MyProjectItem * pro_units  = nullptr;
+MyProjectItem * pro_forms  = nullptr;
+
+static void set_pro_target_name(QString name)
+{
+    ptr_win->ui->projectTreeWidget->clear();
+    pro_global = new
+    MyProjectItem(ptr_win->ui->projectTreeWidget, name, 1);
+    
+    pro_units  = new
+    MyProjectItem(pro_global,"Unit's", 2);
+    
+    pro_forms  = new
+    MyProjectItem(pro_global,"Designer Form's", 2);
+    
+    MyProjectItem * item = new
+    MyProjectItem (pro_forms, "muster.wfm", 3);
+}
+
+static void add_pro_unit(QString name)
+{
+    if (pro_units == nullptr) {
+        QMessageBox::warning(ptr_win,
+        "Memory Syntax Error !!!",
+        "TARGET must be set, before you can add source modules."
+        );
+        throw new QString("Internal Error.");
+    }
+   
+    MyProjectItem * item = new
+    MyProjectItem (pro_units, name, 3);
+}
+
+%}
+
+//-- SYMBOL SEMANTIC VALUES -----------------------------
+%union {
+  int val; 
+  char sym;
+};
+
+%token _TEMPLATE_ _TARGET_ _NAME_ _ASSIGN_
+%token _NUMBER_
+%token _SOURCES_ _PEQUAL_
+
+%start pro_pros
+
+//-- GRAMMAR RULES ---------------------------------------
+%%
+
+pro_pros:
+      pro_project
+    | pro_pros pro_pros
+    ;
+
+pro_project:
+    { /* empty */ }
+    | _TEMPLATE_ _ASSIGN_ _NAME_ { }
+    | _TARGET_   _ASSIGN_ _NAME_ { set_pro_target_name(protext); }
+    | _SOURCES_  _PEQUAL_ add_source
+	;
+
+add_source:
+    { /* empty */ }
+    | _NAME_ {
+        pro_source_list << pro_text;
+    }
+    | add_source _NAME_ {
+        pro_source_list << pro_text;
+    }
+    ;
+%%
+//-- FUNCTION DEFINITIONS ---------------------------------
+int promain(MainWindow *w, QString file)
+{
+    line_no = 1;
+    pro_source_list.clear();
+    
+    if (file.length() < 1) {
+        QMessageBox::information(0,
+            "Warning",
+            "parser file can't be open");
+        return 0;
+    }
+
+    // Linux: - .pro
+    QFile in_file(file);
+    if (!in_file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QMessageBox::warning(0,"Project File Error !!!",
+        QString("File: '%1' could not be open.").arg(in_file.fileName()));
+        return 0;
+    }
+    
+    QFileInfo f(in_file);
+    QString file_path = f.absolutePath();
+    in_file.close();
+    
+    if (pro_input == nullptr) {
+        pro_input = fopen(file.toLatin1().data(), "r");
+    }
+    else {
+        fclose(pro_input);
+        pro_input = nullptr;
+    }
+    
+    QString makestr = file_path;
+    pro_target_path = file_path;
+    
+    makestr = makestr.append("/Makefile");
+
+    if (pro_input == nullptr)
+        pro_input = fopen(file.toLatin1().data(),"r");
+    
+    proset_in (pro_input);
+    prorestart(pro_input);
+    
+    ptr_win = w;
+    int res = proparse();
+
+    QString sources;
+    QString objects;
+
+    if (((pro_source_list.count() - 1) < 0)
+    &&  ((pro_object_list.count() - 1) < 0)) {
+        QMessageBox::warning(0,"Error","No project sources.");
+        fclose(pro_input);
+        
+        QFile f;
+        f.setFileName(makestr);
+        if (!f.remove()) {
+            QMessageBox::warning(ptr_win,
+            "System Error !!!",
+            "Makefile could not be deleted.");
+        }   return line_no;
+    }
+    else if ((pro_source_list.count() - 1) < 1) {
+        sources.append(QString(pro_source_list.at(0)));
+        add_pro_unit(QString(pro_source_list.at(0)));
+    }
+    else {
+        sources.append("\\\n");
+        for (int i = 0; i < (pro_source_list.count()-1); i++) {
+        add_pro_unit(QString(pro_source_list.at(i)));
+            sources.append("\t");
+            sources.append(QString(pro_source_list.at(i)));
+            sources.append(" \\\n");
+        }   sources.append("\t");
+        add_pro_unit(QString(pro_source_list.at(
+        pro_source_list.count()-1)));
+            sources.append(
+            QString(pro_source_list.at(
+            pro_source_list.count()-1)));
+            sources.append("\n\n");
+    }
+  
+    // update list ...
+    ptr_win->ui->projectTreeWidget->addTopLevelItem(pro_units);
+    
+    if ((pro_object_list.count() - 1) < 0) {
+    
+    }
+    else {
+        if ((pro_object_list.count() - 1) < 1) {
+            objects.append("\\\n\t");
+            objects.append(QString(pro_object_list.at(
+            (pro_object_list.count() - 1))));
+        }
+        else {
+            for (int i = 0; i < (pro_object_list.count()-1); i++) {
+                objects.append("\n\t");
+                objects.append(QString(pro_source_list.at(i)));
+                objects.append(" \\\n");
+            }
+        }
+        objects.append(
+        QString(pro_object_list.at(
+        pro_object_list.count()-1)));
+    }
+
+    fclose(pro_input);
+    pro_input = nullptr;
+    
+    // generate Makefile for "make"
+    QFile pro_makefile(makestr);
+    if (!pro_makefile.open(QIODevice::WriteOnly)) {
+        QMessageBox::critical(ptr_win,
+        "System Error!!!",
+        "Could not create Makefile.");
+        return line_no;
+    }
+    
+    QTextStream out(&pro_makefile);
+    out << "# Makefile\n"
+        << "# DO NOT EDIT THIS FILE - ALL DATA WILL BE LOST.\n"
+        << "# KALLUP * non-profit Software\n"
+        << "ASM32 = nasm -f elf32\n"
+        << "LD32  = ld -melf_i386\n"
+        << "STRIP = strip\n"
+        << "\n#### Output directory\n"
+        << "OBJECTS_DIR = .obj"
+        << "\n#### Files\n"
+    
+        << "SOURCES = " <<    sources << "\n"
+        << "OBJECTS = " <<    objects << "\n"
+        << "TARGET  = " << pro_target << "\n"
+        
+        << "\nall: Makefile $(TARGET)\n";
+
+    pro_makefile.close();
+    return res;
+}

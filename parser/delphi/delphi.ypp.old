@@ -1,0 +1,1063 @@
+%{
+// --------------------------------------------------------------------------------
+// MIT License
+//
+// Copyright (c) 2018 Jens Kallup
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --------------------------------------------------------------------------------
+#include <stdio.h>
+#include <strings.h>
+#include <stdlib.h>
+
+#undef  yylex
+#undef  yyparse
+#define yylex   delphilex
+#define yyparse delphiparse
+
+extern int line_no;
+extern void delphiset_in(FILE *);
+
+//-- Lexer prototype required by bison, aka getNextToken()
+int delphilex(void);
+int yyerror(const char *p) {
+    printf("error at %d line: %s\n",line_no,p);
+    return 1;
+}
+%}
+
+//-- SYMBOL SEMANTIC VALUES -----------------------------
+%union {
+  int val; 
+  char sym;
+};
+
+%token _BEGIN_ _END_ _IMPLEMENTATION_ _PROGRAM_ _UNIT_ _LIBRARY_ _PACKAGE_
+%token _USES_ _IN_ _FILE_ _NOT_EQUAL_ _LESSER_THAN_ _GREATER_THAN_ _ABSOLUTE_
+%token _NIL_ _NAME_ _STRING_ _NUMBER_ _STRING_LITTERAL_ _DBL_POINT_ _ASM_
+%token _PACKED_ _ARRAY_ _OF_ _SET_ _RECORD_ _OVERLOAD_ _ASSIGNMENT_ _DOT_
+%token _CASE_ _PROCEDURE_ _FUNCTION_ _CLASS_ _CDECL_ _PASCAL_ _REGISTER_ _AT_
+%token _SAFECALL_ _STDCALL_ _DESTRUCTOR_ _CONSTRUCTOR_ _CONST_ _VAR_
+%token _OUT_ _ABSTRACT_ _VIRTUAL_ _DYNAMIC_ _OVERRIDE_ _REINTRODUCE_ _MESSAGE_
+%token _PRIVATE_ _PUBLIC_ _PROTECTED_ _PUBLISHED_ _INITIALIZATION_ _FINALIZATION_
+%token _TYPE_ _PROPERTY_ _DEFAULT_ _NODEFAULT_ _WRITE_ _READ_ _READONLY_ _WRITEONLY_
+%token _INDEX_ _DISPID_ _STORED_ _THREADVAR_ _INTERFACE_ _DISPINTERFACE_
+%token _DIV_ _MOD_ _AND_ _XOR_ _OR_ _NOT_ _SHL_ _SHR_
+%token _IF_ _ELSE_ _THEN_ _WHILE_ _FOR_ _DO_ _REPEAT_ _TRY_ _WITH_ _UNTIL_
+%token _EXCEPT_ _FINALLY_ _RAISE_ _INHERITED_ _TO_ _DOWNTO_
+%token _IMPLEMENTS_ _ON_ _IS_
+%token _EXTENDED_ _DOUBLE_ _BYTE_ _WORD_ _LONGWORD_ _SMALLINT_ _INTEGER_ _CARDINAL_
+%token _SINGLE_ _CURRENCY_ _SHORTINT_ _LONGINT_ _INT64_ _CHAR_ _STRINGTYPE_
+%token _BOOLEAN_ _FALSE_ _TRUE_
+
+%start delphi
+
+//-- GRAMMAR RULES ---------------------------------------
+%%
+
+delphi: program | unit | library | package ;
+
+program:
+	  _PROGRAM_ _NAME_ ';'
+	| _PROGRAM_ _NAME_ ';' const_type_var_declarations 
+	| _PROGRAM_ _NAME_ ';' const_type_var_declarations           _BEGIN_      _END_ _DOT_
+	| _PROGRAM_ _NAME_ ';' const_type_var_declarations           _BEGIN_ bloc _END_ _DOT_
+	| _PROGRAM_ _NAME_ ';' const_type_var_declarations main_uses _BEGIN_      _END_ _DOT_
+	| _PROGRAM_ _NAME_ ';' const_type_var_declarations main_uses _BEGIN_ bloc _END_ _DOT_
+	| _PROGRAM_ _NAME_ ';' main_uses const_type_var_declarations _BEGIN_      _END_ _DOT_
+	| _PROGRAM_ _NAME_ ';' main_uses const_type_var_declarations _BEGIN_ bloc _END_ _DOT_
+	| _PROGRAM_ _NAME_ ';' main_uses _BEGIN_      _END_ _DOT_
+	| _PROGRAM_ _NAME_ ';' main_uses _BEGIN_ bloc _END_ _DOT_
+	| _PROGRAM_ _NAME_ ';' _BEGIN_                _END_ _DOT_
+	| _PROGRAM_ _NAME_ ';' _BEGIN_ bloc _END_ _DOT_
+	;
+
+unit:
+	_UNIT_ _NAME_ ';' unit_interface unit_implementation unit_end '.'
+	;
+
+uses:
+	_USES_ identifier_list ';'
+	;
+
+unit_interface:
+	  _INTERFACE_      const_type_var_declarations
+	| _INTERFACE_ uses const_type_var_declarations
+	| _INTERFACE_ uses routine_header
+	| _INTERFACE_      routine_header
+	;
+
+unit_implementation:
+	  _IMPLEMENTATION_      main_declarations
+	| _IMPLEMENTATION_ uses main_declarations
+	;
+
+unit_end:
+	  _BEGIN_ instruction_list _END_
+	| _BEGIN_ initialization   _END_
+	;
+
+initialization:
+	  _INITIALIZATION_ instruction_list
+	| _INITIALIZATION_ instruction_list _FINALIZATION_ instruction_list
+	;
+
+library: _LIBRARY_ _NAME_ main_uses bloc '.' ;
+package: _PACKAGE_ _NAME_ ';' ;
+
+identifier_list:
+	  _NAME_
+	| _NAME_ ',' _NAME_
+	;
+
+unit_qualified_identifier:
+	  _NAME_
+	| _NAME_ '.' _NAME_
+	;
+
+main_uses:
+	{ /* empty */ }
+	| _USES_ uses_in ';'
+	| _USES_ uses_in ',' uses_in ';'
+	;
+
+uses_in:
+	  _NAME_
+	| _NAME_ _IN_ constant_expression
+	;
+
+asm:
+	_ASM_ asm_statement _END_
+	;
+
+asm_statement_:
+	{ /* empty */ }
+	| _NAME_
+	| _NUMBER_
+	| _STRING_
+	| '['
+	| ']'
+	| '.'
+	| ','
+	| ':'
+	| '+'
+	| '-'
+	| '*'
+	| '/'
+	| _NOT_
+	| _AND_
+	| _OR_
+	| _XOR_
+	| _SHR_
+	| _SHL_
+	| _DIV_
+	| label_
+	;
+
+label_:
+	  '@'     _NAME_
+	| '@'     _NUMBER_
+	| '@' '@' _NAME_
+	| '@' '@' _NUMBER_
+	;
+
+asm_statement:
+	asm_statement_
+	;
+
+typed_constant:
+	  simple_expression_
+	| simple_expression_ '='            simple_expression_
+	| simple_expression_ _NOT_EQUAL_    simple_expression_
+	| simple_expression_ '<'            simple_expression_
+	| simple_expression_ '>'            simple_expression_
+	| simple_expression_ _GREATER_THAN_ simple_expression_
+	| simple_expression_ _LESSER_THAN_  simple_expression_
+	| simple_expression_ _IN_           simple_expression_
+	| simple_expression_ _IS_           simple_expression_
+	;
+
+simple_expression :
+simple_expression_;
+
+simple_expression_:
+	      term__
+        |     term__ '+'   term__
+        |     term__ '-'   term__
+        |     term__ _OR_  term__
+        |     term__ _XOR_ term__
+        | '+' term__
+        | '-' term__
+        | '-' term__ '+'   term__
+        | '-' term__ '-'   term__
+        | '-' term__ _OR_  term__
+        | '-' term__ _XOR_ term__
+        | '+' term__ '+'   term__
+        | '+' term__ '-'   term__
+        | '+' term__ _OR_  term__
+        | '+' term__ _XOR_ term__	
+	;
+
+typed_constant_:
+	  typed_constant
+	| typed_constant ',' typed_constant
+	;
+
+expression:
+	  simple_expression
+	| simple_expression '='             simple_expression
+	| simple_expression _NOT_EQUAL_     simple_expression
+	| simple_expression '<'             simple_expression
+	| simple_expression '>'             simple_expression
+	| simple_expression _GREATER_THAN_  simple_expression
+	| simple_expression _LESSER_THAN_   simple_expression
+	| simple_expression _IN_            simple_expression
+	| simple_expression _IS_            simple_expression
+	;
+
+constant_expression:
+	  simple_expression__
+	| simple_expression__ '='	     simple_expression__
+	| simple_expression__ _NOT_EQUAL_    simple_expression__
+	| simple_expression__ '<'            simple_expression__
+	| simple_expression__ '>'	     simple_expression__
+	| simple_expression__ _GREATER_THAN_ simple_expression__
+	| simple_expression__ _LESSER_THAN_  simple_expression__
+	| simple_expression__ _IN_           simple_expression__
+	;
+
+simple_expression__:
+	      term__
+        |     term__ '+'   term__
+        |     term__ '-'   term__
+        |     term__ _OR_  term__
+        |     term__ _XOR_ term__
+	| '+' term__
+	| '-' term__
+	| '-' term__ '+'   term__
+	| '-' term__ '-'   term__
+	| '-' term__ _OR_  term__
+	| '-' term__ _XOR_ term__
+	| '+' term__ '+'   term__
+	| '+' term__ '-'   term__
+	| '+' term__ _OR_  term__
+	| '+' term__ _XOR_ term__
+	;
+
+term__:
+	| factor__
+	| factor__ '*'   factor__
+	| factor__ '/'	 factor__
+	| factor__ _DIV_ factor__
+	| factor__ _MOD_ factor__
+	| factor__ _AND_ factor__
+	| factor__ _SHL_ factor__
+	| factor__ _SHR_ factor__
+	;
+
+factor_:
+          _NUMBER_
+        | _STRING_
+        | _NIL_
+        | variable_access
+        | _NOT_ factor_t
+        | '@'   factor_t
+        | '^' _NAME_
+        | '(' typed_constant_ ')'
+        | set_factor
+        ;
+
+factor__:
+	  _NUMBER_
+	| _STRING_
+	| _NIL_
+	| variable_access
+	| _NOT_ factor__
+	| '@' factor__
+	| set_factor
+	| '^' _NAME_
+	| '(' constant_expression ')'
+	;
+
+set_factor:
+	  '[' set_element ']'
+	| '[' set_element ',' set_element ']'
+	;
+
+set_element:
+	  constant_expression
+	| constant_expression _DBL_POINT_ constant_expression
+	;
+
+variable_access:
+	  _NAME_    end_access
+	| _STRING_  end_access
+	;
+
+end_access:
+	  array_access
+	| record_access
+	| '^'
+	| function_parameters
+	;
+
+array_access:
+	  '[' constant_expression ']'
+	  '[' constant_expression ',' constant_expression ']'
+	;
+
+record_access:
+	  '.' variable_access
+	;
+
+function_parameters:
+	  '(' ')'
+	| '(' constant_expression ')'
+	| '(' constant_expression ',' constant_expression ')'
+	;
+
+identifer_list:
+	  _NAME_
+	| _NAME_ ',' _NAME_
+	;
+
+unit_qualified_identifer:
+	  _NAME_
+	| _NAME_ '.' _NAME_
+	;
+
+type_name:
+	  _NAME_
+	| _STRING_
+	| _FILE_
+	;
+
+unit_qualified_type_name:
+	  type_name
+	| type_name '.' type_name
+	;
+
+function_result_type:
+	  type_name
+	;
+
+string_expression:
+	  _NAME_
+	| _STRING_
+	| '+' _NAME_
+	| '+' _STRING_
+	;
+
+bloc:
+	{ /* empty */ }
+	| main_declarations
+	| main_declarations composed_instruction
+	| main_declarations asm
+	;
+
+main_declarations:
+	{ /* empty */
+	| const_type_var_declarations
+	| procedure_declarations_and_body
+	;
+
+const_type_var_declarations:
+	  constant_definitions
+	| resource_definitions
+	| type_definitions
+	| variable_declarations
+	;
+
+procedure_declarations_and_body:
+	procedure_declaration
+	;
+
+procedure_declaration:
+	routine_header
+	;
+
+composed_instruction:
+	instruction_list
+	;
+
+instruction_list:
+	{ /* empty */ }
+	|             ';'
+	| instruction ';'
+	| instruction ';' instruction
+	;
+
+instruction:
+	  assignment_or_call
+	| structured_instruction
+	;
+
+assignment_or_call:
+	  expression
+	| expression end_assignment
+	;
+
+end_assignment:
+	_ASSIGNMENT_ expression
+	;
+
+structured_instruction:
+	  composed_instruction
+	| test
+	| repetition
+	| with
+	| try
+	| inherited_call
+	| raise_statement
+	| asm
+	;
+
+test:	if | case
+	;
+
+if	:
+	  _IF_ expression _THEN_ instruction
+	| _IF_ expression _ELSE_ instruction
+	;
+
+case	:
+	  _CASE_ expression _OF_ case_element ';'                     _END_
+	| _CASE_ expression _OF_ case_element _ELSE_ instruction_list _END_
+	;
+
+case_element:
+	case_label ':' instruction
+	;
+
+case_label:
+	  constant_expression
+	| constant_expression ','         constant_expression
+	| constant_expression _DBL_POINT_ constant_expression
+	;
+
+repetition: while | repeat | for
+	;
+
+while:	_WHILE_ expression _DO_ instruction ;
+repeat: _REPEAT_ instruction_list _UNTIL_ expression ;
+
+for:	  _FOR_ unit_qualified_identifier _ASSIGNMENT_ expression          expression _DO_ instruction
+	| _FOR_ unit_qualified_identifier _ASSIGNMENT_ expression _TO_     expression _DO_ instruction
+	| _FOR_ unit_qualified_identifier _ASSIGNMENT_ expression _DOWNTO_ expression _DO_ instruction
+	;
+
+with:	  _WITH_                expression _DO_ instruction
+	| _WITH_ expression ',' expression _DO_ instruction
+	;
+
+try:	  _TRY_ instruction_list                            _END_
+	| _TRY_ instruction_list _EXCEPT_  except_block     _END_
+	| _TRY_ instruction_list _FINALLY_ instruction_list _END_
+	;
+
+except_block:
+	  on
+	| on        instruction_list
+	| on _ELSE_ instruction_list
+	;
+
+on:
+	  handle_instruction
+	| handle_instruction ';'
+	| handle_instruction ';' handle_instruction
+	;
+
+exception_identifier:
+	  unit_qualified_identifier
+	| unit_qualified_identifier ':' unit_qualified_identifier
+	;
+
+handle_instruction:
+	  _ON_ exception_identifier _DO_
+	| _ON_ exception_identifier _DO_ instruction ';'
+	;
+
+inherited_call:
+	  _INHERITED_
+	| _INHERITED_ instruction
+	;
+
+raise_statement:
+	  _RAISE_
+	| _RAISE_ variable_access
+	| _RAISE_ variable_access _AT_ constant_expression
+	;
+
+type:
+	  keyed_types
+	| type_0
+	| _BYTE_
+	| _CHAR_
+	| _STRINGTYPE_
+	| _BOOLEAN_
+	| _SHORTINT_
+	| _WORD_
+	| _SMALLINT_
+	| _LONGWORD_
+	| _CARDINAL_
+	| _LONGINT_
+	| _INTEGER_
+	| _INT64_
+	| _SINGLE_
+	| _CURRENCY_
+	| _DOUBLE_
+	| _EXTENDED_
+	;
+
+enumeration_type:
+	'(' identifier_list ')'
+	;
+
+expression_t:
+	  simple_expression_t
+	| simple_expression_t '='            simple_expression_t
+	| simple_expression_t _NOT_EQUAL_    simple_expression_t
+	| simple_expression_t '<'            simple_expression_t
+	| simple_expression_t _GREATER_THAN_ simple_expression_t
+	| simple_expression_t _LESSER_THAN_  simple_expression_t
+	| simple_expression_t '>'            simple_expression_t
+	| simple_expression_t _IN_           simple_expression_t
+	| simple_expression_t _DBL_POINT_    end_range_type
+	;
+
+simple_expression_t:
+	      term_t '+'         term_t
+	|     term_t '-'         term_t
+	|     term_t     _OR_    term_t
+	|     term_t     _XOR_   term_t
+	| '+' term_t '+'         term_t
+	| '+' term_t '-'         term_t
+	| '-' term_t '-'         term_t
+	| '-' term_t '+'         term_t
+	| '-' term_t     _OR_    term_t
+	| '-' term_t     _XOR_   term_t
+	| '-' term_t '-'         term_t
+	| '-' term_t '+'         term_t
+	;
+
+term_t:
+	  factor_t '*'   factor_t
+	| factor_t '/'   factor_t
+	| factor_t _DIV_ factor_t
+	| factor_t _MOD_ factor_t
+	| factor_t _AND_ factor_t
+	| factor_t _SHR_ factor_t
+	| factor_t _SHL_ factor_t
+	;
+
+factor_t:
+	  _NUMBER_
+	| _STRING_
+	| _NIL_
+	| variable_access
+	| _NOT_ factor_t
+	| '@'   factor_t
+	| '^' _NAME_
+	| '(' expression_t ')'
+	| set_factor
+	;
+
+end_range_type:
+	  simple_expression_t
+	;
+
+type_0:
+	  _NUMBER_
+	| _STRING_
+	| _NIL_
+	| _NOT_
+	| '+'
+	| '-'
+	| '@'
+	| '('
+	| ')'
+	| _NAME_
+	;
+
+keyed_types:
+	  string_type
+	| structure_type
+	| pointer_type
+	| procedural_type
+	;
+
+string_type:
+	  _STRING_
+	| _STRING_ '[' constant_expression ']'
+	;
+
+structure_type:
+		   array_type
+	|	   record_type
+	|	   set_type
+	|          file_type
+	| _PACKED_ array_type
+	| _PACKED_ record_type
+	| _PACKED_ set_type
+	| _PACKED_ file_type
+	;
+
+array_type:
+	  _ARRAY_                                   _OF_ type
+	| _ARRAY_ '[' index_type ']'                _OF_ type
+	| _ARRAY_ '[' index_type ',' index_type ']' _OF_ type
+	;
+
+index_type:
+	  constant_expression
+	| constant_expression _DBL_POINT_ constant_expression
+	;
+
+record_type:
+	  _RECORD_ field_list _END_
+	;
+
+field_list:
+	{ /* empty */ }
+	| common_field ';'
+	| common_field ';' variant_fields
+	;
+
+common_field:
+	  identifier_list ':' type
+	;
+
+variant_fields:
+	  _CASE_ tag _OF_ cases
+	;
+
+tag:
+	  _NAME_
+	| _NAME_ ':' unit_qualified_type_name
+	;
+
+cases:
+	  constant_expression                         ':'
+	| constant_expression ',' constant_expression ':' one_case
+	;
+
+one_case:
+	  '(' ')'
+	| '(' ')' ';'
+	| '(' common_field   ';' common_field   ')'
+	| '(' common_field   ';' common_field   ')' ';'
+	| '(' common_field   ';'                ')' ';'
+	| '(' common_field   ';' variant_fields ')'
+	| '(' common_field   ';' variant_fields ')' ';'
+	| '(' variant_fields                    ')'
+	| '(' variant_fields                    ')' ';'
+	;
+
+set_type:  _SET_           _OF_ type;
+file_type: _FILE_ | _FILE_ _OF_ type;
+
+pointer_type: '^' _NAME_;
+
+procedural_type:
+	  _PROCEDURE_
+	| _PROCEDURE_ formal_parameters
+	| _FUNCTION_
+	| _FUNCTION_  formal_parameters ':' function_result_type procedural_type_directives
+	;
+
+procedural_type_directives: calling_directives;
+calling_directives:
+	  ';'
+	| _CDECL_
+	| _PASCAL_
+	| _REGISTER_
+	| _SAFECALL_
+	| _STDCALL_
+	;
+
+overload_directive: _OVERLOAD_ ;
+
+routine_header:
+	  class_methods_header
+	| constructor_header
+	| destructor_header
+	;
+
+class_methods_header:
+	  _CLASS_ class_procedure_method
+	| _CLASS_ class_function_method
+	;
+
+class_procedure_method:
+	  _PROCEDURE_ _NAME_ '.' _NAME_ ';'
+	| _PROCEDURE_ _NAME_ '.' _NAME_ formal_parameters ';'
+	;
+
+class_function_method:
+	| _FUNCTION_ _NAME_ '.' _NAME_ formal_parameters ':' function_result_type ';'
+	;
+
+constructor_header:
+	  _CONSTRUCTOR_ _NAME_ '.' _NAME_ ';'
+	| _CONSTRUCTOR_ _NAME_ '.' _NAME_ formal_parameters ';'
+	;
+
+destructor_header:
+	  _DESTRUCTOR_ _NAME_ '.' _NAME_ ';'
+	| _DESTRUCTOR_ _NAME_ '.' _NAME_ formal_parameters ';'
+	;
+
+function_header:
+	  _FUNCTION_ _NAME_                              ':' function_result_type ';'
+	| _FUNCTION_ _NAME_            formal_parameters ':' function_result_type ';'
+	| _FUNCTION_ _NAME_ '.' _NAME_        		 ':' function_result_type ';'
+	| _FUNCTION_ _NAME_ '.' _NAME_ formal_parameters ':' function_result_type ';'
+	;
+
+formal_parameters:
+	  '(' formal_parameter ')'
+	| '(' formal_parameter ';' formal_parameter ')'
+	;
+
+formal_parameter:
+	  parameter
+	| var_parameter
+	| const_parameter
+	| out_parameter
+	| in_parameter
+	;
+
+parameter_name_list:
+	  _NAME_
+	| _NAME_ ',' _NAME_
+	;
+
+array_or_name_type:
+	  _ARRAY_ _OF_ _CONST_
+	| _ARRAY_ _OF_ unit_qualified_type_name
+	| unit_qualified_type_name
+	;
+
+parameter:
+	  parameter_name_list ':' array_or_name_type
+	| parameter_name_list ':' array_or_name_type '=' constant_expression
+	;
+
+var_parameter:
+	  _VAR_ parameter_name_list
+	| _VAR_ parameter_name_list ':' array_or_name_type
+	;
+
+const_parameter:
+	  _CONST_ parameter_name_list
+	| _CONST_ parameter_name_list ':' array_or_name_type
+	| _CONST_ parameter_name_list ':' array_or_name_type '=' constant_expression
+	;
+
+out_parameter:
+	  _OUT_ parameter_name_list
+	| _OUT_ parameter_name_list ':' array_or_name_type
+	;
+
+in_parameter:
+	  _IN_ parameter
+	;
+
+method_directives:
+	  _ABSTRACT_
+	| _VIRTUAL_
+	| _DYNAMIC_
+	| _OVERRIDE_
+	| _REINTRODUCE_
+	| _MESSAGE_ constant_expression
+	;
+
+constant_definitions:
+	  _CONST_ constant_definition
+	;
+
+constant_definition:
+	  _NAME_          '=' typed_constant ';'
+	| _NAME_ ':' type '=' typed_constant ';'
+	;
+
+resource_definitions:
+	  _STRING_ resource_definition
+	;
+
+resource_definition:
+	  _NAME_ '=' string_expression ';'
+	;
+
+type_definitions:
+	  _TYPE_ type_definition
+	;
+
+type_definition:
+	  _NAME_    '=' class_type     ';'
+	| _NAME_    '=' interface_type ';'
+	| _NAME_    '=' type           ';'
+	;
+
+property:
+	  _PROPERTY_ _NAME_
+	| _PROPERTY_ _NAME_               property_specifiers
+	| _PROPERTY_ _NAME_ property_type property_specifiers
+	;
+
+property_type:
+	                   ':' unit_qualified_type_name
+	| property_indexes ':' unit_qualified_type_name
+	;
+
+property_indexes:
+	  '[' property_index ']'
+	| '[' property_index ';' property_index ']'
+	;
+
+property_index:
+	                     _NAME_ ':' unit_qualified_type_name
+	|         _NAME_ ',' _NAME_ ':' unit_qualified_type_name
+	| _CONST_ _NAME_            ':' unit_qualified_type_name
+	| _CONST_ _NAME_ ',' _NAME_ ':' unit_qualified_type_name
+	;
+
+property_specifiers:
+	{ /* empty */ }
+	| _INDEX_ constant_expression
+	| _READ_  variable_access
+	| _READONLY_ 
+	| _WRITE_ _NAME_
+	| _WRITEONLY_
+	| _DISPID_ constant_expression
+	| _DISPID_ constant_expression ';'
+	| storage_specifier
+	| storage_specifier ';'
+	| _IMPLEMENTS_ unit_qualified_identifier ';'
+	| _IMPLEMENTS_ unit_qualified_identifier ',' unit_qualified_identifier ';'
+	;
+
+storage_specifier:
+	  storage_stored
+	| storage_default
+	| storage_nodefault
+	;
+
+storage_nodefault: _NODEFAULT_ ;
+
+storage_stored:
+	  _STORED_
+	| _STORED_ constant_expression
+	;
+
+storage_default:
+	  _DEFAULT_
+	| _DEFAULT_ constant_expression
+	;
+
+storage_no_default:
+	  _NODEFAULT_
+	;
+
+variable_declarations:
+	{ /* empty */ }
+	| _THREADVAR_ variable_declaration
+	| _VAR_       variable_declaration variable_declarations
+	;
+
+varname:
+	  _NAME_ ':' type
+	| varname ',' varname
+	;
+
+variable_declaration:
+	{ /*empty */ }
+	|  _NAME_ ':' type ';'                     variable_declaration
+	|  _NAME_ ':' type '=' typed_constant ';'  variable_declaration
+	|  _NAME_ ':' type '=' absolute ';'        variable_declaration
+	|  _NAME_ ':' type '=' boolean  ';'	   variable_declaration
+	|  _NAME_ ':' type '=' _STRING_ ';'	   variable_declaration
+	| varname ';'                              variable_declaration
+	;
+
+boolean:
+	_FALSE_ | _TRUE_
+	;
+
+absolute:
+	  _ABSOLUTE_ _NAME_
+	;
+
+interface_type:
+	  _INTERFACE_
+	| _INTERFACE_     interface_definition
+	| _DISPINTERFACE_
+	| _DISPINTERFACE_ interface_definition
+	;
+
+interface_definition:
+	  interface_heritage interface_member_list _END_
+	| interface_guid     interface_member_list _END_
+	;
+
+interface_heritage: '(' identifier_list ')';
+interface_guid:     '[' string_expression ']';
+
+interface_member_list:
+	{ /* empty */ }
+	| class_procedure_
+	| class_function_
+	| property
+	;
+
+interface_directives_:
+	{ /* empty */ }
+	| method_directives
+	| method_directives   ';'
+	| overload_directive
+	| overload_directive  ';'
+	| calling_directives
+	| calling_directives  ';'
+	| dispid
+	| dispid              ';'
+	;
+
+dispid:
+	_DISPID_ constant_expression
+	;
+
+class_procedure_:
+	  _PROCEDURE_   _NAME_                   ';' interface_directives_
+	| _CONSTRUCTOR_ _NAME_                   ';' interface_directives_
+	| _DESTRUCTOR_  _NAME_                   ';' interface_directives_
+	| _PROCEDURE_   _NAME_ formal_parameters ';' interface_directives_
+	| _CONSTRUCTOR_ _NAME_ formal_parameters ';' interface_directives_
+	| _DESTRUCTOR_  _NAME_ formal_parameters ';' interface_directives_
+	;
+
+class_function_:
+	  _FUNCTION_ _NAME_                   ':' function_result_type ';' interface_directives_
+	| _FUNCTION_ _NAME_ formal_parameters ':' function_result_type ';' interface_directives_
+	;
+
+class_type:
+	  _CLASS_
+	| class_reference
+	| class_definition
+	;
+
+class_reference:
+	  _OF_ unit_qualified_type_name
+	;
+
+class_definition:
+	  ineritance
+	| class_body
+	;
+
+ineritance:
+	  '(' unit_qualified_type_name ')';
+	| '(' unit_qualified_type_name ',' unit_qualified_type_name ')'
+	;
+
+class_body:
+	  fields_and_procs_section _END_
+	;
+
+fields_and_procs_section:
+	  protection fields_and_procs
+	;
+
+protection:
+	  _PRIVATE_
+	| _PROTECTED_
+	| _PUBLIC_
+	| _PUBLISHED_
+	;
+
+fields_and_procs:
+	  class_field class_methods
+	| class_field property
+	;
+
+class_field:
+	  identifier_list ':' type ';'
+	;
+
+class_methods:
+	  constructor
+	| destructor
+	|         class_procedure
+	|         class_function
+	| _CLASS_ class_procedure
+	| _CLASS_ class_function
+	;
+
+class_procedure:
+	  _PROCEDURE_ _NAME_ ';'
+	| _PROCEDURE_ _NAME_ rename_method ';'
+	| _PROCEDURE_ _NAME_ formal_parameters ';'
+	;
+
+class_function:
+	  _FUNCTION_ _NAME_                   ':' function_result_type ';' method_directives_
+	| _FUNCTION_ _NAME_ rename_method     ':' function_result_type ';' method_directives_
+	| _FUNCTION_ _NAME_ formal_parameters ':' function_result_type ';' method_directives_
+	;
+
+rename_method:
+	'.' _NAME_ '=' _NAME_ ';'
+	;
+
+constructor:
+	  _CONSTRUCTOR_ _NAME_                   ';' method_directives_
+	| _CONSTRUCTOR_ _NAME_ formal_parameters ';' method_directives_
+	;
+
+destructor:
+	  _DESTRUCTOR_  _NAME_                   ';' method_directives_
+	| _DESTRUCTOR_  _NAME_ formal_parameters ';' method_directives_
+	;
+
+method_directives_:
+	  method_directives
+	| overload_directive
+	| calling_directives
+	| method_directives  ';'
+	| overload_directive ';'
+	| calling_directives ';'
+	;
+
+%%
+//-- FUNCTION DEFINITIONS ---------------------------------
+
+int main(int argc, char **argv)
+{
+    if (argc < 1) {
+        fprintf(stderr,"usage: %s <source-file>\n",argv[0]);
+	exit(1);
+    }
+
+    FILE *f = fopen(argv[1],"r");
+    delphiset_in(f);
+    delphiparse();
+
+    fclose(f);
+    return EXIT_SUCCESS;
+}

@@ -1,0 +1,180 @@
+%{
+// --------------------------------------------------------------------------------
+// MIT License
+//
+// Copyright (c) 2018 Jens Kallup
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy
+// of this software and associated documentation files (the "Software"), to deal
+// in the Software without restriction, including without limitation the rights
+// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the Software is
+// furnished to do so, subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+// SOFTWARE.
+// --------------------------------------------------------------------------------
+#include <stdio.h>
+#include <strings.h>
+#include <stdlib.h>
+
+#undef  yyparse
+#undef  yylex
+
+#undef  yychar
+#undef  yynerrs
+#undef  yylval
+#undef  yyerror
+#undef  yyset_in
+
+#define yychar    csschar
+#define yynerrs   cssnerrs
+#define yylineno  csslineno
+#define yylval    csslval
+#define yyerror   csserror
+#define yyrestart cssrestart
+#define yyset_in  cssset_in
+
+#define yylex     csslex
+#define yyparse   cssparse
+
+extern void cssset_in (FILE *);
+extern void cssrestart(FILE *);
+
+extern int  csslex();
+extern int  csserror(const char*);
+
+extern char* csstext;
+
+# include <QString>
+# include <QMessageBox>
+# include <QTextEdit>
+
+# include "source/parser/misc.h"
+
+extern int csslineno;
+//static QTextEdit * ptr_win = nullptr;  // MainWindow::ui->helpBrowser
+
+// ----------------------------------------------------------------
+// the html subset of help browser is in strict use mpde.
+// this means, that the code is staticaly checked, and must
+// be exactly given by it's specification.
+// else, error will be display, and parser stop future readings.
+// ----------------------------------------------------------------
+int csserror(const char *p) {
+    QMessageBox::warning(
+    0,"CSS Error !!!",
+    QString("Error at line: %1: %2. ")
+    .arg(csslineno)
+    .arg(p));
+    return csslineno;
+}
+
+%}
+
+//-- SYMBOL SEMANTIC VALUES -----------------------------
+%token ANGLE
+%token EMS
+%token EXS
+%token FREQ
+%token HASH
+%token HZ
+%token IDENT
+%token KHZ
+%token LENGTH
+%token NUMBER
+%token PERCENTAGE
+%token STRING
+%token TEXT_ALIGN
+%token TEXT_CENTER
+%token TIME
+%token URI
+
+%start css_parser;
+
+//-- GRAMMAR RULES ---------------------------------------
+%%
+
+css_parser:
+      style
+    | css_parser style
+    ;
+
+style:
+    idents '{' decors '}'
+    ;
+    
+idents:
+    IDENT {
+        QMessageBox::information(0,"info",csstext);
+        help_append_css_class(csstext);
+        help_class_str = csstext;
+    }
+    | idents idents
+    ;
+
+decors:
+    { /* empty */ }
+    | TEXT_ALIGN ':' TEXT_CENTER {
+        help_append_css_text(
+        help_class_str.toLatin1().data(),
+        "<center>");
+    } ';'
+    ;
+    
+%%
+//-- FUNCTION DEFINITIONS ---------------------------------
+int cssmain(QTextEdit *p, QString name)
+{
+#if 0
+    if (name.length() < 1) {
+        QMessageBox::information(0,
+            "Warning",
+            "parser file can't be open");
+        return 1;
+    }
+
+    FILE *f = nullptr;
+    if (!(f = fopen(name.toLatin1().data(),"r"))) {
+        QMessageBox::critical(0,"Error","parse file could not open.");
+        return 1;
+    }
+    cssset_in (f);
+    cssrestart(f);
+
+    #if 0
+    // ------------------------------
+    // first element Document init.
+    // ------------------------------
+    //help_setup_settings();
+    
+    // sanity
+    ptr_win = new QTextEdit;
+    ptr_win = p;
+    #endif
+    
+    int res = cssparse();
+    fclose(f) ;
+    
+    #if 0
+    // -----------------------------------------------
+    // when all is ok, try render the informations ...
+    // -----------------------------------------------
+    if (!res) {
+        QString html;
+        for (int i = 0; i < help_text.count(); ++i)
+        html.append(help_text.at(i).text);
+        ptr_win->setHtml(html);
+    }
+    #endif
+#endif
+    return 0;
+}

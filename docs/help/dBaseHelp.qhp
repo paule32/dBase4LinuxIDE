@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QtHelpProject version="1.0">
+	<namespace>dbase.center</namespace>
+	<virtualFolder>doc</virtualFolder>
+	<customFilter name="dBase4Linux 1.0">
+		<filterAttribute>dBase</filterAttribute>
+		<filterAttribute>1.0</filterAttribute>
+	</customFilter>
+	<filterSection>
+		<filterAttribute>dBase</filterAttribute>
+		<filterAttribute>1.0</filterAttribute>
+		<toc>
+			<section title="Help - Welcome" ref="index.html">
+				<section title="Chapter 1" ref="chapter1.htm"/>
+				<section title="Chapter 2" ref="index.html"/>
+			</section>
+       		</toc>
+		<toc>
+			<section title="dBase Language reference" ref="doc/dbase/index.html">
+				<section title="CLASS"    ref="doc/dbase/class.html"/>
+				<section title="ENDCLASS" ref="doc/dbase/endclass.html"/>
+				<section title="OF"       ref="doc/dbase/of.html"/>
+			</section>
+		</toc>
+	<files>
+		<file>index.html</file>
+		<file>test.html</file>
+		<file>doc/dbase/index.html</file>
+		<file>doc/dbase/class.html</file>
+		<file>doc/dbase/endclass.html</file>
+		<file>doc/dbase/of.html</file>
+        </files>
+	</filterSection>
+</QtHelpProject>
+
